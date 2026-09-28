@@ -29,7 +29,7 @@ class BatchPublishTests(unittest.TestCase):
             self.assertEqual(latest["schema_version"], 1)
             self.assertEqual(latest["dates"], ["2026-09-18"])
             self.assertEqual(latest["snapshot"]["sentiment_history"][-1]["score"], 64)
-            self.assertIn("龙头回调观察", (output / "reports/2026-09-18.md").read_text())
+            self.assertIn("多策略选股观察", (output / "reports/2026-09-18.md").read_text())
             self.assertEqual(result["snapshot"]["date"], "2026-09-18")
 
     def test_history_accumulates_without_duplicate_same_day(self):

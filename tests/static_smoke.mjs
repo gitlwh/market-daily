@@ -45,11 +45,13 @@ try {
   assert.equal(await evaluate(`document.querySelector('#refresh-button span').textContent`), '读取云端日报');
   assert.equal(await evaluate(`document.querySelectorAll('.sentiment-component').length`), 6);
   assert.equal(await evaluate(`document.querySelectorAll('#leaders-sector-tabs button').length`), 12);
-  assert.equal(await evaluate(`document.querySelectorAll('#leaders-strategy-tabs button').length`), 2);
+  assert.equal(await evaluate(`document.querySelectorAll('#leaders-strategy-tabs button').length`), 3);
   await evaluate(`document.querySelector('[data-leader-strategy="value_momentum"]').click()`);
   await until(`document.querySelector('[data-leader-strategy="value_momentum"]').classList.contains('selected')`);
   assert.equal(await evaluate(`document.querySelectorAll('#leaders-list .leader-stock').length`), await evaluate(`Number(document.querySelector('#leaders-count').textContent)`));
   assert(await evaluate(`document.querySelector('#leaders-rules').textContent.includes('市盈率')`));
+  await evaluate(`document.querySelector('[data-leader-strategy="three_week_rise"]').click()`);
+  assert(await evaluate(`document.querySelector('#leaders-rules').textContent.includes('完整自然周')`));
   assert.equal(await evaluate(`document.querySelector('#report-date').options.length`), 1);
   await evaluate(`document.querySelector('#export-button').click()`);
   assert((await evaluate(`document.querySelector('#export-json').getAttribute('href')`)).startsWith('data/reports/'));

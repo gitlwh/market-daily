@@ -210,8 +210,8 @@ class Application:
                               "available_count": 0, "candidate_count": 0, "stocks": [],
                               "sector_leader_count": 110, "market_cap_top_100_count": 0,
                               "rules": dict(leader_screen.RULES),
-                              "errors": ["龙头回调观察暂时无法读取，请稍后重试"],
-                              "source": {"name": "Yahoo Finance · 龙头回调观察", "url": "https://finance.yahoo.com/",
+                              "errors": ["多策略选股观察暂时无法读取，请稍后重试"],
+                              "source": {"name": "Yahoo Finance · 多策略选股观察", "url": "https://finance.yahoo.com/",
                                          "status": "error", "detail": "本次未取得个股历史行情"},
                               "note": "规则筛选的研究候选，不是买入建议。"}
                 snapshot["leader_screen"] = screen
@@ -330,7 +330,7 @@ def markdown_report(snapshot):
     screen = snapshot.get("leader_screen")
     if screen:
         candidates = [item for item in screen.get("stocks", []) if item.get("status") == "candidate"]
-        lines += ["", "## 龙头回调观察", "",
+        lines += ["", "## 多策略选股观察", "",
                   "合并股票池：11 个板块各 10 家龙头，并加入市值前 100 后去重，共 %d 家；符合观察条件 %d 家。规则筛选的研究候选，不是买入建议。" % (screen.get("universe_size", 0), len(candidates)), "",
                   "| 公司 | 板块 | 行情日期 | 前期上涨 | 距高点回调 | 50 / 200 日均线 |",
                   "| --- | --- | --- | ---: | ---: | ---: |"]
@@ -362,7 +362,7 @@ def markdown_report(snapshot):
     lines += ["", "## 来源状态", ""]
     lines.extend("- %s：%s，%s" % (clean(item["name"]), clean(item["status"]), clean(item["detail"]))
                  for item in snapshot.get("sources", []))
-    lines += ["", "行业 ETF 为板块代理；热度、新闻优先级和龙头回调观察由公开规则计算。行情可能延迟，历史表现不保证未来结果。", ""]
+    lines += ["", "行业 ETF 为板块代理；热度、新闻优先级和多策略选股观察由公开规则计算。行情可能延迟，历史表现不保证未来结果。", ""]
     return "\n".join(lines)
 
 

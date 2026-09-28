@@ -192,7 +192,12 @@
     $('#leaders-view').value = state.leaderView;
     $('#leaders-sector-tabs').innerHTML = `<button type="button" data-leader-sector="TOP100" class="${state.leaderSector === 'TOP100' ? 'selected' : ''}" aria-pressed="${state.leaderSector === 'TOP100'}"><span>市值前 100</span><strong>${top100Candidates}</strong></button>` + SECTORS.map((sector) => `<button type="button" data-leader-sector="${sector.symbol}" class="${state.leaderSector === sector.symbol ? 'selected' : ''}" aria-pressed="${state.leaderSector === sector.symbol}"><span>${esc(sector.name)}</span><strong>${sectorCounts[sector.symbol] || 0}</strong></button>`).join('');
     const rules = screen?.rules || {};
-    const ruleItems = state.leaderStrategy === 'value_momentum' ? [
+    const ruleItems = state.leaderStrategy === 'three_week_rise' ? [
+      ['完整自然周', '只使用已经结束的自然周周末复权收盘价'],
+      ['第一周上涨', '第一周收盘价高于此前一周'],
+      ['第二周上涨', '第二周收盘价继续高于第一周'],
+      ['第三周上涨', '第三周收盘价继续高于第二周'],
+    ] : state.leaderStrategy === 'value_momentum' ? [
       ['正市盈率', '仅比较盈利为正且取得可核对市盈率的公司'],
       ['相对低估', `市盈率位于股票池较低 30%${isNumber(activeStrategy?.pe_cutoff) ? `，本期上限 ${formatNumber(activeStrategy.pe_cutoff)} 倍` : ''}`],
       ['近期上涨', `最近 ${activeStrategy?.momentum_days || 20} 个交易日涨幅 ≥ ${activeStrategy?.momentum_min_pct || 3}%`],
@@ -207,8 +212,10 @@
     let visible = stocks.filter((stock) => state.leaderSector === 'all' || (state.leaderSector === 'TOP100'
       ? asArray(stock.universe_tags).includes('market_cap_top_100') : stock.sector === state.leaderSector));
     if (state.leaderView === 'candidate') visible = visible.filter((stock) => strategyResult(stock).status === 'candidate');
-    visible.sort((a, b) => (strategyResult(a).status !== 'candidate') - (strategyResult(b).status !== 'candidate') || (state.leaderStrategy === 'value_momentum' ? (b.return_20d_pct || -Infinity) - (a.return_20d_pct || -Infinity) : (b.gain_pct || -Infinity) - (a.gain_pct || -Infinity)));
-    const checkLabels = state.leaderStrategy === 'value_momentum'
+    visible.sort((a, b) => (strategyResult(a).status !== 'candidate') - (strategyResult(b).status !== 'candidate') || (state.leaderStrategy === 'value_momentum' ? (b.return_20d_pct || -Infinity) - (a.return_20d_pct || -Infinity) : state.leaderStrategy === 'three_week_rise' ? (b.three_week_return_pct || -Infinity) - (a.three_week_return_pct || -Infinity) : (b.gain_pct || -Infinity) - (a.gain_pct || -Infinity)));
+    const checkLabels = state.leaderStrategy === 'three_week_rise'
+      ? { week_1: '第一周上涨', week_2: '第二周上涨', week_3: '第三周上涨' }
+      : state.leaderStrategy === 'value_momentum'
       ? { positive_pe: '正市盈率', low_pe: '相对低估', recent_momentum: '近期上涨', above_sma50: '站上 50 日线' }
       : { prior_gain: '前期上涨', recent_high: '高点够近', pullback: '回调幅度', uptrend: '上升趋势' };
     $('#leaders-list').innerHTML = visible.map((stock) => {
@@ -219,10 +226,14 @@
       const checks = Object.entries(checkLabels).map(([key, label]) => `<span class="leader-check ${result.checks?.[key] ? 'passed' : 'failed'}"><i aria-hidden="true">${result.checks?.[key] ? '✓' : '–'}</i>${label}</span>`).join('');
       const tags = asArray(stock.universe_tags);
       const origins = `${tags.includes('sector_leader') ? '<span>板块龙头</span>' : ''}${tags.includes('market_cap_top_100') ? `<span>市值第 ${formatNumber(stock.market_cap_rank, 0)} 名</span>` : ''}`;
-      const metrics = state.leaderStrategy === 'value_momentum'
+      const weeklyReturns = asArray(stock.weekly_returns_pct);
+      const metrics = state.leaderStrategy === 'three_week_rise'
+        ? `<div><span>第一周</span><strong class="${direction(weeklyReturns[0])}">${percent(weeklyReturns[0])}</strong><small>完整周涨跌</small></div><div><span>第二周</span><strong class="${direction(weeklyReturns[1])}">${percent(weeklyReturns[1])}</strong><small>完整周涨跌</small></div><div><span>第三周</span><strong class="${direction(weeklyReturns[2])}">${percent(weeklyReturns[2])}</strong><small>三周累计 ${percent(stock.three_week_return_pct)}</small></div>`
+        : state.leaderStrategy === 'value_momentum'
         ? `<div><span>滚动市盈率</span><strong>${isNumber(stock.pe_ratio) ? `${formatNumber(stock.pe_ratio)}×` : '—'}</strong><small>公开行情字段</small></div><div><span>近 20 日涨幅</span><strong class="${direction(stock.return_20d_pct)}">${percent(stock.return_20d_pct)}</strong><small>复权收盘价</small></div><div><span>相对 50 日线</span><strong class="${direction(isNumber(stock.price) && isNumber(stock.sma50) ? stock.price - stock.sma50 : null)}">${isNumber(stock.price) && isNumber(stock.sma50) ? percent((stock.price / stock.sma50 - 1) * 100) : '—'}</strong><small>${esc(stock.trading_date || '日期未知')}</small></div>`
         : `<div><span>最新复权收盘</span><strong>$${formatNumber(stock.price)}</strong><small>${esc(stock.trading_date || '日期未知')}</small></div><div><span>前期上涨</span><strong class="${direction(stock.gain_pct)}">${percent(stock.gain_pct)}</strong><small>高点相对 60 日前</small></div><div><span>距近期高点</span><strong class="negative">${percent(stock.pullback_pct)}</strong><small>${esc(stock.high_date || '')} 高点</small></div>`;
-      return `<article class="leader-stock ${result.status === 'candidate' ? 'leader-candidate' : ''}" data-leader-symbol="${esc(stock.symbol || '')}"><header><div><a href="${esc(quoteURL)}" target="_blank" rel="noopener noreferrer"><strong>${esc(stock.symbol || '—')}</strong><span>${esc(stock.name || '')}</span></a><small>${esc(sectorName(stock.sector))} · ${esc(stock.sector || '')}</small><div class="leader-origins">${origins}</div></div><span class="leader-state ${result.status}">${result.status === 'candidate' ? '符合观察条件' : insufficient ? '数据不足' : '暂未满足'}</span></header>${insufficient ? `<div class="leader-insufficient">${esc(result.reason || '策略所需数据不足')}</div>` : `<div class="leader-metrics">${metrics}</div><div class="leader-chart">${history.length > 1 ? chart(history, state.leaderStrategy === 'value_momentum' ? stock.return_20d_pct : stock.pullback_pct, 'leader-sparkline', `${stock.symbol} 近 ${history.length} 个交易日复权收盘走势`) : ''}</div><div class="leader-checks">${checks}</div>`}</article>`;
+      const chartChange = state.leaderStrategy === 'value_momentum' ? stock.return_20d_pct : state.leaderStrategy === 'three_week_rise' ? stock.three_week_return_pct : stock.pullback_pct;
+      return `<article class="leader-stock ${result.status === 'candidate' ? 'leader-candidate' : ''}" data-leader-symbol="${esc(stock.symbol || '')}"><header><div><a href="${esc(quoteURL)}" target="_blank" rel="noopener noreferrer"><strong>${esc(stock.symbol || '—')}</strong><span>${esc(stock.name || '')}</span></a><small>${esc(sectorName(stock.sector))} · ${esc(stock.sector || '')}</small><div class="leader-origins">${origins}</div></div><span class="leader-state ${result.status}">${result.status === 'candidate' ? '符合观察条件' : insufficient ? '数据不足' : '暂未满足'}</span></header>${insufficient ? `<div class="leader-insufficient">${esc(result.reason || '策略所需数据不足')}</div>` : `<div class="leader-metrics">${metrics}</div><div class="leader-chart">${history.length > 1 ? chart(history, chartChange, 'leader-sparkline', `${stock.symbol} 近 ${history.length} 个交易日复权收盘走势`) : ''}</div><div class="leader-checks">${checks}</div>`}</article>`;
     }).join('');
     const scopeCount = state.leaderSector === 'all' ? screen?.universe_size : state.leaderSector === 'TOP100'
       ? stocks.filter((stock) => asArray(stock.universe_tags).includes('market_cap_top_100')).length
@@ -504,7 +515,7 @@
     $('#report-date').disabled = demo || !dates.length || state.busy || running;
     $('#last-updated').textContent = snapshot?.generated_at
       ? `${demo ? '示例采集' : '采集于'} ${formatTime(snapshot.generated_at, { month: '2-digit', day: '2-digit' })} ET${snapshot.market_date && snapshot.market_date !== snapshot.date ? ` · 报价日 ${snapshot.market_date.slice(5).replace('-', '/')}` : ''}`
-      : running ? '正在采集 ETF、110 家龙头与新闻，可能需要约 1 分钟…' : '尚未采集 · 点击右上角开始';
+      : running ? '正在采集 ETF、合并股票池与新闻，可能需要约 1 分钟…' : '尚未采集 · 点击右上角开始';
     $('#live-mode').classList.toggle('selected', !demo);
     $('#demo-mode').classList.toggle('selected', demo);
     $('#live-mode').setAttribute('aria-pressed', String(!demo));

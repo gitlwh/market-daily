@@ -65,6 +65,14 @@ class LeaderScreenUnitTests(unittest.TestCase):
         self.assertIn(parsed[0]["sector"], leader_screen.SECTOR_LEADERS)
         self.assertEqual(parsed[0]["pe_ratio"], 10)
 
+    def test_three_week_signal_uses_only_completed_calendar_weeks(self):
+        weekly = leader_screen.completed_weekly_closes([
+            {"date": "2026-08-28", "close": 100}, {"date": "2026-09-04", "close": 101},
+            {"date": "2026-09-11", "close": 103}, {"date": "2026-09-18", "close": 106},
+            {"date": "2026-09-21", "close": 200},
+        ])
+        self.assertEqual([value for _, value in weekly], [100, 101, 103, 106])
+
     def test_one_failed_rule_is_not_candidate(self):
         values = [100 + index * .01 for index in range(205)]
         result = leader_screen.screen_stock("TEST", "测试", "XLK", bars(values))
@@ -102,12 +110,15 @@ class LeaderScreenUnitTests(unittest.TestCase):
 class LeaderCollectorTests(unittest.TestCase):
     def test_collector_preserves_partial_results(self):
         values = [80 + index * .2 for index in range(220)]
-        def fake_fetch(url):
+        def fake_fetch(url, **kwargs):
             if "screener/predefined" in url:
                 rows = [{"symbol": "TOP%03d" % index, "name": "Top %d" % index,
                          "marketCap": str(1_000_000_000_000 - index), "sector": "Technology",
                          "trailingPE": 10 + index / 10}
                         for index in range(100)]
+                return json.dumps({"data": {"rows": rows}}).encode()
+            if "api.nasdaq.com" in url:
+                rows = [{"symbol": "TOP%03d" % index, "sector": "Technology"} for index in range(100)]
                 return json.dumps({"data": {"rows": rows}}).encode()
             symbol = url.split("/chart/")[1].split("?")[0]
             symbol = symbol.replace("%2D", "-")
@@ -120,7 +131,8 @@ class LeaderCollectorTests(unittest.TestCase):
         self.assertEqual(result["universe_size"], 210)
         self.assertEqual(result["market_cap_top_100_count"], 100)
         self.assertEqual(result["available_count"], 209)
-        self.assertEqual([item["id"] for item in result["strategies"]], ["pullback", "value_momentum"])
+        self.assertEqual([item["id"] for item in result["strategies"]],
+                         ["pullback", "value_momentum", "three_week_rise"])
         self.assertGreater(result["strategies"][1]["candidate_count"], 0)
         failed = next(item for item in result["stocks"] if item["symbol"] == "AAPL")
         self.assertEqual(failed["status"], "insufficient")
@@ -128,7 +140,7 @@ class LeaderCollectorTests(unittest.TestCase):
 
     def test_collector_falls_back_to_leaders_when_market_cap_source_fails(self):
         values = [80 + index * .2 for index in range(220)]
-        def fake_fetch(url):
+        def fake_fetch(url, **kwargs):
             if "screener/predefined" in url:
                 raise ProviderError("offline")
             symbol = url.split("/chart/")[1].split("?")[0].replace("%2D", "-")

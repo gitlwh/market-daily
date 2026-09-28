@@ -112,7 +112,7 @@ try {
   const demoScreen = await evaluate(`fetch('/api/demo').then(r => r.json()).then(d => d.snapshot.leader_screen)`);
   assert.equal(demoScreen.universe_size, 110);
   assert.equal(await evaluate(`document.querySelectorAll('#leaders-sector-tabs button').length`), 12);
-  assert.equal(await evaluate(`document.querySelectorAll('#leaders-strategy-tabs button').length`), 2);
+  assert.equal(await evaluate(`document.querySelectorAll('#leaders-strategy-tabs button').length`), 3);
   assert(await evaluate(`document.querySelector('#sectors').compareDocumentPosition(document.querySelector('#leaders')) & Node.DOCUMENT_POSITION_FOLLOWING`), 'Leader screen follows sectors');
   assert(await evaluate(`document.querySelector('#leaders').compareDocumentPosition(document.querySelector('#earnings')) & Node.DOCUMENT_POSITION_FOLLOWING`), 'Leader screen precedes earnings');
   assert.equal(await evaluate(`document.querySelectorAll('.leader-stock').length`), demoScreen.candidate_count);

@@ -132,7 +132,7 @@ def _tls_context():
     return ssl.create_default_context()
 
 
-def fetch_bytes(url):
+def fetch_bytes(url, max_bytes=MAX_RESPONSE_BYTES):
     """Bound response bytes, socket waits and elapsed read time; no retries."""
     request = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (compatible; MarketDaily/1.0; personal dashboard)",
@@ -143,8 +143,8 @@ def fetch_bytes(url):
     try:
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT, context=_tls_context()) as response:
             length = response.headers.get("Content-Length")
-            if length and length.isdigit() and int(length) > MAX_RESPONSE_BYTES:
-                raise ProviderError("响应超过 2 MB 限制")
+            if length and length.isdigit() and int(length) > max_bytes:
+                raise ProviderError("响应超过大小限制")
             chunks = []
             size = 0
             # read1 avoids waiting for a whole chunk while a server trickles data.
@@ -152,13 +152,13 @@ def fetch_bytes(url):
             while True:
                 if time.monotonic() - started > REQUEST_DEADLINE:
                     raise ProviderError("读取超时")
-                chunk = read(min(65536, MAX_RESPONSE_BYTES + 1 - size))
+                chunk = read(min(65536, max_bytes + 1 - size))
                 if not chunk:
                     break
                 chunks.append(chunk)
                 size += len(chunk)
-                if size > MAX_RESPONSE_BYTES:
-                    raise ProviderError("响应超过 2 MB 限制")
+                if size > max_bytes:
+                    raise ProviderError("响应超过大小限制")
             return b"".join(chunks)
     except urllib.error.HTTPError as exc:
         raise ProviderError("HTTP %s" % exc.code) from exc
