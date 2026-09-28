@@ -44,7 +44,8 @@ try {
   await until(`document.querySelector('#main')?.getAttribute('aria-busy') === 'false' && document.querySelector('#sentiment-score')?.textContent !== '—'`);
   assert.equal(await evaluate(`document.querySelector('#refresh-button span').textContent`), '读取云端日报');
   assert.equal(await evaluate(`document.querySelectorAll('.sentiment-component').length`), 6);
-  assert.equal(await evaluate(`document.querySelectorAll('#leaders-sector-tabs button').length`), 12);
+  assert.equal(await evaluate(`document.querySelectorAll('#leaders-sector-tabs button').length`), 11);
+  assert.equal(await evaluate(`document.querySelector('[data-leader-sector="TOP100"]')`), null);
   assert.equal(await evaluate(`document.querySelectorAll('#leaders-strategy-tabs button').length`), 3);
   await evaluate(`document.querySelector('[data-leader-strategy="value_momentum"]').click()`);
   await until(`document.querySelector('[data-leader-strategy="value_momentum"]').classList.contains('selected')`);
