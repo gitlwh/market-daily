@@ -11,6 +11,7 @@ import earnings
 import leader_screen
 import providers
 import sentiment
+import advanced_strategies
 from server import Application, markdown_report
 from translations import Translator
 
@@ -64,6 +65,10 @@ def publish(output, snapshot, demo=None):
                "schedule": {"enabled": True, "hour": 18, "minute": 30,
                             "timezone": "America/New_York", "next_run": None, "kind": "cloud_cron"}}
     write_json(reports / (snapshot["date"] + ".json"), payload)
+    estimate_payload = advanced_strategies.estimate_snapshot((snapshot.get("leader_screen") or {}).get("stocks") or [])
+    estimate_payload["date"] = snapshot["date"]
+    estimate_payload["generated_at"] = snapshot.get("generated_at")
+    write_json(output / "estimate-history" / (snapshot["date"] + ".json"), estimate_payload)
     write_atomic(reports / (snapshot["date"] + ".md"), markdown_report(snapshot))
     dates = sorted((path.stem for path in reports.glob("????-??-??.json")), reverse=True)
     payload["dates"] = dates

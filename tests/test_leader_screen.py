@@ -132,8 +132,8 @@ class LeaderCollectorTests(unittest.TestCase):
         self.assertEqual(result["market_cap_top_100_count"], 100)
         self.assertEqual(result["available_count"], 209)
         self.assertEqual([item["id"] for item in result["strategies"]],
-                         ["pullback", "value_momentum", "three_week_rise"])
-        self.assertGreater(result["strategies"][1]["candidate_count"], 0)
+                         ["drawdown_repair", "value_turnaround", "growth_strength"])
+        self.assertGreater(result["strategies"][1]["insufficient_count"], 0)
         failed = next(item for item in result["stocks"] if item["symbol"] == "AAPL")
         self.assertEqual(failed["status"], "insufficient")
         self.assertTrue(result["errors"])

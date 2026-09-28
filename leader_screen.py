@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time as day_time, timedelta
 
 from providers import EASTERN, ProviderError, eastern_now, fetch_bytes
+import advanced_strategies
 
 
 SECTOR_LEADERS = {
@@ -136,9 +137,11 @@ def parse_market_cap_top_100(payload):
         if not symbol or market_cap is None:
             continue
         pe_ratio = _finite(row.get("trailingPE"), positive=True)
+        forward_pe = _finite(row.get("forwardPE"), positive=True)
         ranked.append({"symbol": symbol,
                        "name": str(row.get("shortName") or row.get("name") or symbol).strip(),
-                       "sector": sector, "market_cap": round(market_cap), "pe_ratio": pe_ratio})
+                       "sector": sector, "market_cap": round(market_cap), "pe_ratio": pe_ratio,
+                       "forward_pe": forward_pe})
     ranked.sort(key=lambda item: item["market_cap"], reverse=True)
     result, seen = [], set()
     for item in ranked:
@@ -152,6 +155,31 @@ def parse_market_cap_top_100(payload):
     if len(result) < 100:
         raise ProviderError("市值榜有效股票不足 100 家")
     return result
+
+
+def parse_pe_lookup(payload):
+    """Keep positive trailing P/E values from the broader screener response."""
+    try:
+        if isinstance(payload, (bytes, str)):
+            payload = json.loads(payload)
+        rows = payload["finance"]["result"][0]["quotes"]
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return {}
+    return {str(row.get("symbol") or "").strip().upper().replace("/", "-"): pe
+            for row in rows if (pe := _finite(row.get("trailingPE"), positive=True)) is not None}
+
+
+def parse_quote_metadata(payload):
+    try:
+        if isinstance(payload, (bytes, str)):
+            payload = json.loads(payload)
+        rows = payload["finance"]["result"][0]["quotes"]
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return {}
+    return {str(row.get("symbol") or "").strip().upper().replace("/", "-"): {
+                "pe_ratio": _finite(row.get("trailingPE"), positive=True),
+                "forward_pe": _finite(row.get("forwardPE"), positive=True)}
+            for row in rows if row.get("symbol")}
 
 
 def parse_sector_map(payload):
@@ -169,6 +197,17 @@ def parse_sector_map(payload):
         if symbol and sector:
             result[symbol] = sector
     return result
+
+
+def parse_industry_map(payload):
+    try:
+        if isinstance(payload, (bytes, str)):
+            payload = json.loads(payload)
+        rows = payload["data"]["rows"]
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return {}
+    return {str(row.get("symbol") or "").strip().upper().replace("/", "-"): str(row.get("industry") or "").strip()
+            for row in rows if row.get("symbol") and row.get("industry")}
 
 
 def completed_weekly_closes(bars):
@@ -219,7 +258,7 @@ def screen_stock(symbol, name, sector, bars, rules=None):
             "pullback_pct": round(pullback, 2), "sma50": round(sma50, 4), "sma200": round(sma200, 4),
             "return_20d_pct": round(return_20d, 2) if return_20d is not None else None,
             "checks": checks, "reason": "符合四项观察条件" if matched else "尚未同时满足四项观察条件",
-            "history": [{"date": bar["date"], "close": round(bar["close"], 4)} for bar in bars[-90:]]}
+            "history": [{"date": bar["date"], "close": round(bar["close"], 4)} for bar in bars[-300:]]}
 
 
 def collect_leader_screen(now=None):
@@ -230,21 +269,33 @@ def collect_leader_screen(now=None):
             universe[symbol] = {"symbol": symbol, "name": name, "sector": sector,
                                 "universe_tags": ["sector_leader"]}
     errors, universe_error, sector_error = [], None, None
+    quote_metadata, industry_map = {}, {}
     try:
-        market_cap_top = parse_market_cap_top_100(fetch_bytes(MARKET_CAP_SOURCE_URL))
+        market_cap_payload = fetch_bytes(MARKET_CAP_SOURCE_URL)
+        market_cap_top = parse_market_cap_top_100(market_cap_payload)
+        quote_metadata = parse_quote_metadata(market_cap_payload)
+        for symbol, stock in universe.items():
+            if symbol in quote_metadata:
+                stock.update({key: value for key, value in quote_metadata[symbol].items() if value is not None})
         try:
-            sector_map = parse_sector_map(fetch_bytes(SECTOR_SOURCE_URL, max_bytes=8 * 1024 * 1024))
+            classification_payload = fetch_bytes(SECTOR_SOURCE_URL, max_bytes=8 * 1024 * 1024)
+            sector_map = parse_sector_map(classification_payload)
+            industry_map = parse_industry_map(classification_payload)
         except Exception as exc:
-            sector_map = {}
+            sector_map, industry_map = {}, {}
             sector_error = str(exc) if isinstance(exc, ProviderError) else "板块分类读取失败"
             errors.append("市值前 100 板块分类：%s" % sector_error)
         for stock in market_cap_top:
             stock["sector"] = SECTOR_OVERRIDES.get(stock["symbol"], sector_map.get(stock["symbol"], stock["sector"]))
+            stock["industry"] = industry_map.get(stock["symbol"])
+        for symbol, stock in universe.items():
+            stock["industry"] = industry_map.get(symbol)
         for stock in market_cap_top:
             if stock["symbol"] in universe:
                 universe[stock["symbol"]].update(market_cap=stock["market_cap"],
                                                   market_cap_rank=stock["market_cap_rank"],
-                                                  pe_ratio=stock.get("pe_ratio"))
+                                                  pe_ratio=stock.get("pe_ratio"), forward_pe=stock.get("forward_pe"),
+                                                  industry=stock.get("industry"))
                 universe[stock["symbol"]]["universe_tags"].append("market_cap_top_100")
             else:
                 universe[stock["symbol"]] = dict(stock, universe_tags=["market_cap_top_100"])
@@ -257,9 +308,9 @@ def collect_leader_screen(now=None):
     def collect_one(stock):
         symbol = stock["symbol"]
         encoded = urllib.parse.quote(symbol, safe="")
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=1y&events=div%%2Csplits" % encoded
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=2y&events=div%%2Csplits" % encoded
         result = screen_stock(symbol, stock["name"], stock["sector"], parse_history(fetch_bytes(url), symbol, now))
-        result.update({key: stock[key] for key in ("universe_tags", "market_cap", "market_cap_rank", "pe_ratio") if key in stock})
+        result.update({key: stock[key] for key in ("universe_tags", "market_cap", "market_cap_rank", "pe_ratio", "forward_pe", "industry") if key in stock})
         return result
 
     with ThreadPoolExecutor(max_workers=8) as executor:
@@ -285,50 +336,37 @@ def collect_leader_screen(now=None):
                 message = str(exc) if isinstance(exc, ProviderError) else first_error
                 results.append({"symbol": symbol, "name": name, "sector": sector,
                                 "status": "insufficient", "reason": message, "trading_date": None,
-                                **{key: stock[key] for key in ("universe_tags", "market_cap", "market_cap_rank", "pe_ratio") if key in stock}})
+                                **{key: stock[key] for key in ("universe_tags", "market_cap", "market_cap_rank", "pe_ratio", "forward_pe", "industry") if key in stock}})
                 errors.append("%s：%s（重试后仍失败）" % (symbol, message))
     order = {stock["symbol"]: index for index, stock in enumerate(universe)}
     results.sort(key=lambda item: (item["status"] != "candidate", order[item["symbol"]]))
-    pe_values = sorted(item["pe_ratio"] for item in results if _finite(item.get("pe_ratio"), positive=True))
-    pe_percentile_cutoff = pe_values[max(0, math.ceil(len(pe_values) * .30) - 1)] if pe_values else None
-    pe_cutoff = min(25.0, pe_percentile_cutoff) if pe_percentile_cutoff is not None else None
-    strategy_counts = {"pullback": 0, "value_momentum": 0, "three_week_rise": 0}
-    for item in results:
-        pullback_result = {"status": item["status"], "checks": item.get("checks", {}),
-                           "reason": item.get("reason")}
-        pe = _finite(item.get("pe_ratio"), positive=True)
-        momentum = _finite(item.get("return_20d_pct"))
-        if item["status"] == "insufficient" or pe is None or pe_cutoff is None or momentum is None:
-            value_result = {"status": "insufficient", "checks": {},
-                            "reason": "市盈率或完整历史行情不足"}
-        else:
-            value_checks = {"positive_pe": pe > 0, "low_pe": pe <= pe_cutoff,
-                            "recent_momentum": momentum >= 3.0,
-                            "above_sma50": item["price"] > item["sma50"]}
-            matched = all(value_checks.values())
-            value_result = {"status": "candidate" if matched else "not_matched",
-                            "checks": value_checks,
-                            "reason": "符合低估上涨条件" if matched else "尚未同时满足低估上涨条件"}
-        weekly = completed_weekly_closes(item.get("history") or [])
-        if len(weekly) < 4:
-            weekly_result = {"status": "insufficient", "checks": {}, "reason": "完整周线不足 4 周"}
-            item["weekly_returns_pct"] = []
-            item["three_week_return_pct"] = None
-        else:
-            weekly_returns = [(weekly[index][1] / weekly[index - 1][1] - 1) * 100
-                              for index in range(len(weekly) - 3, len(weekly))]
-            weekly_checks = {"week_1": weekly_returns[0] > 0, "week_2": weekly_returns[1] > 0,
-                             "week_3": weekly_returns[2] > 0}
-            weekly_matched = all(weekly_checks.values())
-            item["weekly_returns_pct"] = [round(value, 2) for value in weekly_returns]
-            item["three_week_return_pct"] = round((weekly[-1][1] / weekly[-4][1] - 1) * 100, 2)
-            weekly_result = {"status": "candidate" if weekly_matched else "not_matched",
-                             "checks": weekly_checks,
-                             "reason": "连续三个完整周上涨" if weekly_matched else "最近三个完整周并非全部上涨"}
-        item["strategy_results"] = {"pullback": pullback_result, "value_momentum": value_result,
-                                    "three_week_rise": weekly_result}
-        for strategy_id, strategy_result in item["strategy_results"].items():
-            strategy_counts[strategy_id] += strategy_result["status"] == "candidate"
+    advanced_strategies.enrich_fundamentals(results, now)
+
+    def benchmark_returns(symbol):
+        encoded = urllib.parse.quote(symbol, safe="")
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=2y&events=div%%2Csplits" % encoded
+        bars = parse_history(fetch_bytes(url), symbol, now)
+        closes = [bar["close"] for bar in bars]
+        return {"return_63d": round((closes[-1] / closes[-64] - 1) * 100, 4) if len(closes) >= 64 else None,
+                "return_126d": round((closes[-1] / closes[-127] - 1) * 100, 4) if len(closes) >= 127 else None}
+
+    sector_returns = {}
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        pending = {executor.submit(benchmark_returns, sector): sector for sector in SECTOR_LEADERS}
+        for future in as_completed(pending):
+            sector = pending[future]
+            try:
+                sector_returns[sector] = future.result()
+            except Exception:
+                sector_returns[sector] = {"return_63d": None, "return_126d": None}
+
+    industry_forward_pes = {}
+    for symbol, meta in quote_metadata.items():
+        industry, forward_pe = industry_map.get(symbol), meta.get("forward_pe")
+        if industry and _finite(forward_pe, positive=True):
+            industry_forward_pes.setdefault(industry, []).append(forward_pe)
+    strategies = advanced_strategies.evaluate(
+        results, sector_returns, industry_forward_pes, advanced_strategies.load_estimate_archives())
     available = sum(item["status"] != "insufficient" for item in results)
     status = "ok" if available == len(universe) else "partial" if available else "error"
     if (universe_error or sector_error) and status == "ok":
@@ -337,14 +375,7 @@ def collect_leader_screen(now=None):
     return {"status": status, "as_of": now.isoformat(timespec="seconds"), "universe_size": len(universe),
             "available_count": available, "candidate_count": sum(item["status"] == "candidate" for item in results),
             "sector_leader_count": 110, "market_cap_top_100_count": top_count,
-            "strategies": [
-                {"id": "pullback", "name": "龙头回调", "candidate_count": strategy_counts["pullback"]},
-                {"id": "value_momentum", "name": "低估上涨", "candidate_count": strategy_counts["value_momentum"],
-                 "pe_percentile": 30, "pe_cutoff": round(pe_cutoff, 2) if pe_cutoff is not None else None,
-                 "momentum_days": 20, "momentum_min_pct": 3.0},
-                {"id": "three_week_rise", "name": "连续三周上涨",
-                 "candidate_count": strategy_counts["three_week_rise"], "completed_weeks": 3},
-            ],
+            "strategies": strategies,
             "rules": dict(RULES), "stocks": results, "errors": errors,
             "source": {"name": "Yahoo Finance · 多策略选股观察", "url": SOURCE_URL, "status": status,
                        "detail": "%d / %d 家合并股票池具备完整筛选样本；市值榜 %d / 100 家；非官方接口，可能延迟" % (available, len(universe), top_count)},
@@ -372,31 +403,26 @@ def demo_leader_screen():
                            "reason": "符合四项观察条件" if candidate else "尚未同时满足四项观察条件",
                            "return_20d_pct": 6.0 if rank % 4 == 0 else 1.0,
                            "history": [{"date": (now.date() - timedelta(days=day)).isoformat(), "close": 120 - day * .08} for day in range(29, -1, -1)]})
-    for stock in stocks:
-        value_candidate = (stock.get("pe_ratio") or 999) <= 18 and (stock.get("return_20d_pct") or 0) >= 3
-        stock["strategy_results"] = {
-            "pullback": {"status": stock["status"], "checks": stock["checks"], "reason": stock["reason"]},
-            "value_momentum": {"status": "candidate" if value_candidate else "not_matched",
-                               "checks": {"positive_pe": True, "low_pe": (stock.get("pe_ratio") or 999) <= 18,
-                                          "recent_momentum": stock.get("return_20d_pct", 0) >= 3,
-                                          "above_sma50": True},
-                               "reason": "符合低估上涨条件" if value_candidate else "尚未同时满足低估上涨条件"},
-            "three_week_rise": {"status": "candidate" if rank % 5 == 0 else "not_matched",
-                                "checks": {"week_1": rank % 5 == 0, "week_2": rank % 5 == 0,
-                                           "week_3": rank % 5 == 0},
-                                "reason": "连续三个完整周上涨" if rank % 5 == 0 else "最近三个完整周并非全部上涨"},
-        }
-        stock["weekly_returns_pct"] = [1.2, 0.8, 1.5] if rank % 5 == 0 else [1.2, -0.4, 1.5]
-        stock["three_week_return_pct"] = 3.54 if rank % 5 == 0 else 2.3
+    for demo_index, stock in enumerate(stocks, 1):
+        stock["strategy_results"] = {}
+        for strategy_index, strategy in enumerate(advanced_strategies.STRATEGIES, 2):
+            matched = demo_index % (strategy_index + 3) == 0
+            conditions = [{"key": "demo_%d" % index, "label": "演示条件 %d" % index,
+                           "status": "PASS" if matched or index < 3 else "FAIL",
+                           "actual": "虚构示例", "threshold": "演示阈值",
+                           "date": "2026-09-18", "source": "本地演示数据"}
+                          for index in range(1, 5)]
+            stock["strategy_results"][strategy["id"]] = {
+                "status": "candidate" if matched else "not_matched",
+                "reason": "演示模式命中" if matched else "演示模式未命中",
+                "conditions": conditions,
+                "checks": {item["key"]: item["status"] for item in conditions}}
     return {"status": "ok", "as_of": now.isoformat(), "universe_size": 110, "available_count": 110,
             "candidate_count": 3, "sector_leader_count": 110, "market_cap_top_100_count": 100,
-            "strategies": [{"id": "pullback", "name": "龙头回调", "candidate_count": 3},
-                           {"id": "value_momentum", "name": "低估上涨",
-                            "candidate_count": sum(s["strategy_results"]["value_momentum"]["status"] == "candidate" for s in stocks),
-                            "pe_percentile": 30, "pe_cutoff": 18, "momentum_days": 20, "momentum_min_pct": 3},
-                           {"id": "three_week_rise", "name": "连续三周上涨",
-                            "candidate_count": sum(s["strategy_results"]["three_week_rise"]["status"] == "candidate" for s in stocks),
-                            "completed_weeks": 3}],
+            "strategies": [{**strategy,
+                            "candidate_count": sum(s["strategy_results"][strategy["id"]]["status"] == "candidate" for s in stocks),
+                            "insufficient_count": 0}
+                           for strategy in advanced_strategies.STRATEGIES],
             "rules": dict(RULES), "stocks": stocks, "errors": [],
             "source": {"name": "本地演示选股数据", "url": None, "status": "ok", "detail": "110 家虚构走势示例"},
             "note": "演示模式：价格与筛选结果均为虚构。规则筛选的研究候选，不是买入建议。"}

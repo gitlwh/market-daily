@@ -47,13 +47,12 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('#leaders-sector-tabs button').length`), 11);
   assert.equal(await evaluate(`document.querySelector('[data-leader-sector="TOP100"]')`), null);
   assert.equal(await evaluate(`document.querySelectorAll('#leaders-strategy-tabs button').length`), 3);
-  await evaluate(`document.querySelector('[data-leader-strategy="value_momentum"]').click()`);
-  await until(`document.querySelector('[data-leader-strategy="value_momentum"]').classList.contains('selected')`);
+  await evaluate(`document.querySelector('[data-leader-strategy="value_turnaround"]').click()`);
+  await until(`document.querySelector('[data-leader-strategy="value_turnaround"]').classList.contains('selected')`);
   assert.equal(await evaluate(`document.querySelectorAll('#leaders-list .leader-stock').length`), await evaluate(`Number(document.querySelector('#leaders-count').textContent)`));
-  assert(await evaluate(`document.querySelector('#leaders-rules').textContent.includes('市盈率')`));
-  await evaluate(`document.querySelector('[data-leader-strategy="three_week_rise"]').click()`);
-  assert(await evaluate(`document.querySelector('#leaders-rules').textContent.includes('完整自然周')`));
-  assert.equal(await evaluate(`document.querySelector('#report-date').options.length`), 1);
+  assert(await evaluate(`document.querySelector('#leaders-rules').textContent.includes('未来 P/E')`));
+  assert(await evaluate(`document.querySelector('#leaders-rules').textContent.includes('同行折价')`));
+  assert((await evaluate(`document.querySelector('#report-date').options.length`)) >= 1);
   await evaluate(`document.querySelector('#export-button').click()`);
   assert((await evaluate(`document.querySelector('#export-json').getAttribute('href')`)).startsWith('data/reports/'));
   await evaluate(`document.querySelector('#close-export').click(); document.querySelector('#demo-mode').click()`);

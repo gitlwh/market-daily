@@ -19,7 +19,7 @@
   const state = {
     mode: 'live', snapshot: null, dates: [], collection: {}, schedule: {},
     selectedDate: '', category: 'all', sector: 'all', keyword: '', newsLimit: 6, newsRange: '24h',
-    sort: 'heat_score', earningsDay: '', leaderStrategy: 'pullback', leaderSector: 'all', leaderView: 'candidate', requestVersion: 0, busy: false, refreshPending: false,
+    sort: 'heat_score', earningsDay: '', leaderStrategy: 'drawdown_repair', leaderSector: 'all', leaderView: 'candidate', requestVersion: 0, busy: false, refreshPending: false,
     pollTimer: null, toastTimer: null, fetchError: '', staticMode: false,
   };
   let chartId = 0;
@@ -176,13 +176,13 @@
   function renderLeaderScreen() {
     const screen = state.snapshot?.leader_screen;
     const stocks = asArray(screen?.stocks);
-    const strategies = asArray(screen?.strategies).length ? screen.strategies : [{ id: 'pullback', name: '龙头回调', candidate_count: screen?.candidate_count || 0 }];
+    const strategies = asArray(screen?.strategies).length ? screen.strategies : [{ id: 'drawdown_repair', name: '跌后修复', candidate_count: 0, insufficient_count: screen?.universe_size || 0 }];
     if (!strategies.some((strategy) => strategy.id === state.leaderStrategy)) state.leaderStrategy = strategies[0].id;
     const activeStrategy = strategies.find((strategy) => strategy.id === state.leaderStrategy) || strategies[0];
     const strategyResult = (stock) => stock.strategy_results?.[state.leaderStrategy] || (state.leaderStrategy === 'pullback'
       ? { status: stock.status, checks: stock.checks, reason: stock.reason } : { status: 'insufficient', checks: {}, reason: '该日报尚无此策略数据' });
     const candidates = stocks.filter((stock) => strategyResult(stock).status === 'candidate');
-    $('#leaders-strategy-tabs').innerHTML = strategies.map((strategy) => `<button type="button" data-leader-strategy="${esc(strategy.id)}" class="${state.leaderStrategy === strategy.id ? 'selected' : ''}" aria-pressed="${state.leaderStrategy === strategy.id}"><span>${esc(strategy.name)}</span><strong>${formatNumber(strategy.candidate_count, 0)}</strong></button>`).join('');
+    $('#leaders-strategy-tabs').innerHTML = strategies.map((strategy) => `<button type="button" data-leader-strategy="${esc(strategy.id)}" class="${state.leaderStrategy === strategy.id ? 'selected' : ''}" aria-pressed="${state.leaderStrategy === strategy.id}" title="候选 ${strategy.candidate_count || 0} 家，数据不足 ${strategy.insufficient_count || 0} 家"><span>${esc(strategy.name)}</span><strong>${formatNumber(strategy.candidate_count, 0)}</strong><small>待数据 ${formatNumber(strategy.insufficient_count, 0)}</small></button>`).join('');
     const sectorCounts = Object.fromEntries(SECTORS.map((sector) => [sector.symbol,
       candidates.filter((stock) => stock.sector === sector.symbol).length]));
     $('#leaders-sector').innerHTML = '<option value="all">全部板块</option>' + SECTORS.map((sector) => `<option value="${sector.symbol}">${esc(sector.name)} · ${sectorCounts[sector.symbol] || 0} 个候选</option>`).join('');
@@ -190,48 +190,28 @@
     $('#leaders-sector').value = state.leaderSector;
     $('#leaders-view').value = state.leaderView;
     $('#leaders-sector-tabs').innerHTML = SECTORS.map((sector) => `<button type="button" data-leader-sector="${sector.symbol}" class="${state.leaderSector === sector.symbol ? 'selected' : ''}" aria-pressed="${state.leaderSector === sector.symbol}"><span>${esc(sector.name)}</span><strong>${sectorCounts[sector.symbol] || 0}</strong></button>`).join('');
-    const rules = screen?.rules || {};
-    const ruleItems = state.leaderStrategy === 'three_week_rise' ? [
-      ['完整自然周', '只使用已经结束的自然周周末复权收盘价'],
-      ['第一周上涨', '第一周收盘价高于此前一周'],
-      ['第二周上涨', '第二周收盘价继续高于第一周'],
-      ['第三周上涨', '第三周收盘价继续高于第二周'],
-    ] : state.leaderStrategy === 'value_momentum' ? [
-      ['正市盈率', '仅比较盈利为正且取得可核对市盈率的公司'],
-      ['相对低估', `市盈率位于股票池较低 30%${isNumber(activeStrategy?.pe_cutoff) ? `，本期上限 ${formatNumber(activeStrategy.pe_cutoff)} 倍` : ''}`],
-      ['近期上涨', `最近 ${activeStrategy?.momentum_days || 20} 个交易日涨幅 ≥ ${activeStrategy?.momentum_min_pct || 3}%`],
-      ['趋势确认', '股价站上 50 日均线'],
-    ] : [
-      ['前期上涨', `高点较 60 个交易日前 ≥ ${isNumber(rules.gain_min_pct) ? rules.gain_min_pct : 20}%`],
-      ['高点够近', `20 日高点出现在最近 ${isNumber(rules.high_recency) ? rules.high_recency : 10} 个交易日`],
-      ['开始回调', `距高点回落 ${isNumber(rules.pullback_min_pct) ? rules.pullback_min_pct : 5}%–${isNumber(rules.pullback_max_pct) ? rules.pullback_max_pct : 12}%`],
-      ['趋势向上', '股价 > 50 日均线 > 200 日均线'],
-    ];
+    const strategyRules = {
+      drawdown_repair: [['回撤充分', '较 252 日最高收盘价回撤至少 20%'], ['价格确认', '连续 5 日站上 MA50'], ['趋势改善', 'MA50 高于 20 个交易日前'], ['预期止跌', '同财年 EPS 预期不低于 63 个交易日前']],
+      value_turnaround: [['同行折价', '未来 P/E ≤ 同细分行业中位数 × 0.8'], ['盈利增长', '下一财年 EPS 高于本财年'], ['预期止跌', '同财年 EPS 预期不低于 63 个交易日前'], ['长期转强', '价格站上 MA200'], ['跑赢板块', '63 日收益高于固定板块 ETF']],
+      growth_strength: [['营收增长', '最近两季同比增长均 ≥ 10%'], ['盈利增长', '最近两季 EPS 同比增长均 ≥ 10% 且为正'], ['预期上调', '同财年 EPS 预期较 63 个交易日前上调 ≥ 3%'], ['长期趋势', '价格 > MA200 且 MA200 上升'], ['跑赢板块', '126 日收益高于固定板块 ETF']],
+    };
+    const ruleItems = strategyRules[state.leaderStrategy] || [];
     $('#leaders-rules').innerHTML = ruleItems.map(([label, detail]) => `<div><strong>${label}</strong><span>${detail}</span></div>`).join('');
     let visible = stocks.filter((stock) => state.leaderSector === 'all' || stock.sector === state.leaderSector);
     if (state.leaderView === 'candidate') visible = visible.filter((stock) => strategyResult(stock).status === 'candidate');
-    visible.sort((a, b) => (strategyResult(a).status !== 'candidate') - (strategyResult(b).status !== 'candidate') || (state.leaderStrategy === 'value_momentum' ? (b.return_20d_pct || -Infinity) - (a.return_20d_pct || -Infinity) : state.leaderStrategy === 'three_week_rise' ? (b.three_week_return_pct || -Infinity) - (a.three_week_return_pct || -Infinity) : (b.gain_pct || -Infinity) - (a.gain_pct || -Infinity)));
-    const checkLabels = state.leaderStrategy === 'three_week_rise'
-      ? { week_1: '第一周上涨', week_2: '第二周上涨', week_3: '第三周上涨' }
-      : state.leaderStrategy === 'value_momentum'
-      ? { positive_pe: '正市盈率', low_pe: '相对低估', recent_momentum: '近期上涨', above_sma50: '站上 50 日线' }
-      : { prior_gain: '前期上涨', recent_high: '高点够近', pullback: '回调幅度', uptrend: '上升趋势' };
+    if (state.leaderView === 'insufficient') visible = visible.filter((stock) => strategyResult(stock).status === 'insufficient');
+    visible.sort((a, b) => (strategyResult(a).status !== 'candidate') - (strategyResult(b).status !== 'candidate') || String(a.symbol).localeCompare(String(b.symbol)));
     $('#leaders-list').innerHTML = visible.map((stock) => {
       const history = asArray(stock.history).map((item) => item?.close).filter(isNumber);
       const result = strategyResult(stock);
       const insufficient = result.status === 'insufficient';
       const quoteURL = `https://finance.yahoo.com/quote/${encodeURIComponent(stock.symbol || '')}/`;
-      const checks = Object.entries(checkLabels).map(([key, label]) => `<span class="leader-check ${result.checks?.[key] ? 'passed' : 'failed'}"><i aria-hidden="true">${result.checks?.[key] ? '✓' : '–'}</i>${label}</span>`).join('');
       const tags = asArray(stock.universe_tags);
       const origins = `${tags.includes('sector_leader') ? '<span>板块龙头</span>' : ''}${tags.includes('market_cap_top_100') ? `<span>市值第 ${formatNumber(stock.market_cap_rank, 0)} 名</span>` : ''}`;
-      const weeklyReturns = asArray(stock.weekly_returns_pct);
-      const metrics = state.leaderStrategy === 'three_week_rise'
-        ? `<div><span>第一周</span><strong class="${direction(weeklyReturns[0])}">${percent(weeklyReturns[0])}</strong><small>完整周涨跌</small></div><div><span>第二周</span><strong class="${direction(weeklyReturns[1])}">${percent(weeklyReturns[1])}</strong><small>完整周涨跌</small></div><div><span>第三周</span><strong class="${direction(weeklyReturns[2])}">${percent(weeklyReturns[2])}</strong><small>三周累计 ${percent(stock.three_week_return_pct)}</small></div>`
-        : state.leaderStrategy === 'value_momentum'
-        ? `<div><span>滚动市盈率</span><strong>${isNumber(stock.pe_ratio) ? `${formatNumber(stock.pe_ratio)}×` : '—'}</strong><small>公开行情字段</small></div><div><span>近 20 日涨幅</span><strong class="${direction(stock.return_20d_pct)}">${percent(stock.return_20d_pct)}</strong><small>复权收盘价</small></div><div><span>相对 50 日线</span><strong class="${direction(isNumber(stock.price) && isNumber(stock.sma50) ? stock.price - stock.sma50 : null)}">${isNumber(stock.price) && isNumber(stock.sma50) ? percent((stock.price / stock.sma50 - 1) * 100) : '—'}</strong><small>${esc(stock.trading_date || '日期未知')}</small></div>`
-        : `<div><span>最新复权收盘</span><strong>$${formatNumber(stock.price)}</strong><small>${esc(stock.trading_date || '日期未知')}</small></div><div><span>前期上涨</span><strong class="${direction(stock.gain_pct)}">${percent(stock.gain_pct)}</strong><small>高点相对 60 日前</small></div><div><span>距近期高点</span><strong class="negative">${percent(stock.pullback_pct)}</strong><small>${esc(stock.high_date || '')} 高点</small></div>`;
-      const chartChange = state.leaderStrategy === 'value_momentum' ? stock.return_20d_pct : state.leaderStrategy === 'three_week_rise' ? stock.three_week_return_pct : stock.pullback_pct;
-      return `<article class="leader-stock ${result.status === 'candidate' ? 'leader-candidate' : ''}" data-leader-symbol="${esc(stock.symbol || '')}"><header><div><a href="${esc(quoteURL)}" target="_blank" rel="noopener noreferrer"><strong>${esc(stock.symbol || '—')}</strong><span>${esc(stock.name || '')}</span></a><small>${esc(sectorName(stock.sector))} · ${esc(stock.sector || '')}</small><div class="leader-origins">${origins}</div></div><span class="leader-state ${result.status}">${result.status === 'candidate' ? '符合观察条件' : insufficient ? '数据不足' : '暂未满足'}</span></header>${insufficient ? `<div class="leader-insufficient">${esc(result.reason || '策略所需数据不足')}</div>` : `<div class="leader-metrics">${metrics}</div><div class="leader-chart">${history.length > 1 ? chart(history, chartChange, 'leader-sparkline', `${stock.symbol} 近 ${history.length} 个交易日复权收盘走势`) : ''}</div><div class="leader-checks">${checks}</div>`}</article>`;
+      const actualText = (value) => value === null || value === undefined ? '暂无数据' : typeof value === 'boolean' ? (value ? '是' : '否') : typeof value === 'object' ? JSON.stringify(value) : String(value);
+      const conditions = asArray(result.conditions).map((condition) => `<div class="strategy-condition ${String(condition.status || 'UNKNOWN').toLowerCase()}"><div><strong>${esc(condition.label)}</strong><span>${esc(condition.status || 'UNKNOWN')}</span></div><p>${esc(actualText(condition.actual))}</p><small>条件：${esc(condition.threshold || '—')}${condition.date ? ` · 数据日期 ${esc(condition.date)}` : ''}${condition.source ? ` · ${esc(condition.source)}` : ''}</small></div>`).join('');
+      const chartChange = history.length > 1 ? (history[history.length - 1] / history[Math.max(0, history.length - 64)] - 1) * 100 : null;
+      return `<article class="leader-stock ${result.status === 'candidate' ? 'leader-candidate' : ''}" data-leader-symbol="${esc(stock.symbol || '')}"><header><div><a href="${esc(quoteURL)}" target="_blank" rel="noopener noreferrer"><strong>${esc(stock.symbol || '—')}</strong><span>${esc(stock.name || '')}</span></a><small>${esc(sectorName(stock.sector))} · ${esc(stock.sector || '')}${stock.industry ? ` · ${esc(stock.industry)}` : ''}</small><div class="leader-origins">${origins}</div></div><span class="leader-state ${result.status}">${result.status === 'candidate' ? '符合观察条件' : insufficient ? '数据不足' : '暂未满足'}</span></header><p class="strategy-reason">${esc(result.reason || '')}</p><div class="strategy-conditions">${conditions}</div><div class="leader-chart">${history.length > 1 ? chart(history, chartChange, 'leader-sparkline', `${stock.symbol} 近 ${history.length} 个交易日复权收盘走势`) : ''}</div></article>`;
     }).join('');
     const scopeCount = state.leaderSector === 'all' ? screen?.universe_size : stocks.filter((stock) => stock.sector === state.leaderSector).length;
     $('#leaders-count').textContent = screen ? String(candidates.length) : '—';
