@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+data/*.db
+data/*.db-*
+data/news-translations-*.json
+.DS_Store
+.venv/
+node_modules/
+test-results/
+site/

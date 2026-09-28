@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#302654">
+  <meta name="description" content="每日整理美股市场、热门板块与重要新闻，提供有来源、可追溯的市场观察。">
+  <title>市场手记 · Market Daily</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%23302654'/%3E%3Cpath d='M10 28V17l7 6 6-13 7 7' fill='none' stroke='%23ddd0ff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳转到市场概览</a>
+  <aside class="sidebar" aria-label="主导航">
+    <a class="brand" href="#overview" aria-label="市场手记首页">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 23V13l7 6L20 7l7 6"/></svg></span>
+      <span>市场手记<small>MARKET DAILY</small></span>
+    </a>
+    <div class="workspace-label">你的每日市场视角</div>
+    <nav class="nav-list">
+      <a class="nav-item active" href="#overview" data-nav="overview"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg>市场概览<span class="nav-active-dot"></span></a>
+      <a class="nav-item" href="#sectors" data-nav="sectors"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20V10m8 10V4m8 16v-7M2 20h20"/></svg>板块雷达</a>
+      <a class="nav-item" href="#leaders" data-nav="leaders"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 18 9 12l4 3 7-9M16 6h4v4"/><circle cx="7" cy="7" r="3"/></svg>股票观察</a>
+      <a class="nav-item" href="#earnings" data-nav="earnings"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-13 4h3m4 0h2m-9 3h3"/></svg>本周财报</a>
+      <a class="nav-item" href="#news" data-nav="news"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h5v5H7zm9 0h1m-1 4h1M7 16h10"/></svg>新闻聚焦<span class="nav-count" id="nav-news-count">—</span></a>
+      <a class="nav-item" href="#alerts" data-nav="alerts"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/></svg>异动观察</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="schedule-card"><span class="schedule-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><strong>让信息，每天有序</strong><p id="schedule-short">每日自动整理市场动态</p></div><span class="status-dot"></span></div>
+      <div class="sidebar-footer"><span class="market-badge">US</span><div>美国股票市场<small>America / New York</small></div><span class="sidebar-footer-star" aria-hidden="true">✧</span></div>
+    </div>
+  </aside>
+
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="breadcrumb">工作台 <span>/</span> <strong>市场概览</strong></div>
+      <div class="topbar-right"><span class="timezone-note"><span class="tiny-dot"></span>以纽约时间为准</span><a class="icon-button help-button" href="#methodology" aria-label="查看数据与计算说明">?</a></div>
+    </header>
+    <main id="main" class="main-content">
+      <section class="page-heading" id="overview">
+        <div><div class="eyebrow">YOUR DAILY MARKET PERSPECTIVE</div><h1>读懂市场的每一天<span class="heading-dot">.</span></h1><p class="page-subtitle">捕捉板块趋势，筛选重要信息。让每日决策，多一份依据。</p></div>
+        <div class="heading-actions"><button id="export-button" class="button button-secondary" type="button" disabled><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg>导出日报</button><button id="refresh-button" class="button button-primary" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 18 17"/></svg><span>收集最新数据</span></button></div>
+      </section>
+
+      <section class="report-toolbar" aria-label="日报设置">
+        <div class="report-toolbar-left"><span class="calendar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18"/></svg></span><label class="sr-only" for="report-date">选择已保存日报</label><select id="report-date" disabled><option value="">暂无已保存日报</option></select><span id="report-status" class="status-chip">等待载入</span></div>
+        <div class="report-toolbar-right"><span id="last-updated">尚未采集</span><div class="mode-switch" role="group" aria-label="数据模式"><button id="live-mode" class="selected" type="button" aria-pressed="true">真实数据</button><button id="demo-mode" type="button" aria-pressed="false">演示</button></div></div>
+      </section>
+
+      <div id="notice" class="notice hidden" role="status" aria-live="polite"></div>
+      <div id="demo-banner" class="demo-banner hidden"><span class="demo-badge">DEMO</span><div><strong>正在浏览演示日报</strong><span> 以下行情、市场情绪、股票筛选、财报、新闻和异动均为示例，仅用于体验页面，不代表当天市场。</span></div><button id="exit-demo" type="button">返回真实数据 <span aria-hidden="true">↗</span></button></div>
+      <div id="empty-state" class="empty-state hidden"><div class="empty-illustration" aria-hidden="true"><svg viewBox="0 0 120 88"><rect x="19" y="12" width="82" height="64" rx="9"/><path d="M31 62h58M32 52l15-13 12 8 24-23"/><path d="M71 24h12v12"/></svg></div><div><span class="eyebrow">A CLEARER VIEW STARTS HERE</span><h2>你的第一份美股日报，从这里开始</h2><p>点击「收集最新数据」，整理行情、板块与当日新闻。你也可以切换到演示模式，先看看完整的市场手记。</p></div></div>
+
+      <section class="indices-grid" id="indices-grid" aria-label="大盘 ETF 行情"></section>
+
+      <section class="card sentiment-card" id="sentiment" aria-labelledby="sentiment-heading">
+        <div class="sentiment-main"><div class="sentiment-gauge" id="sentiment-gauge"><div><strong id="sentiment-score">—</strong><span>/ 100</span></div></div><div class="sentiment-copy"><div class="section-kicker">MARKET SENTIMENT</div><h2 id="sentiment-heading">市场情绪 · <span id="sentiment-label">等待数据</span></h2><p id="sentiment-explanation">综合大盘趋势、市场广度、动量、波动率与已收录新闻。</p><small id="sentiment-meta">缺失分项不会按零分处理</small></div><div id="sentiment-history" class="sentiment-history" aria-label="近期市场情绪走势"></div></div>
+        <div id="sentiment-components" class="sentiment-components"></div>
+        <div class="sentiment-footer"><span id="sentiment-note">情绪分数是规则指标，不预测未来涨跌。</span><button type="button" id="sentiment-method-button">查看计算口径</button></div>
+      </section>
+
+      <section class="daily-brief card" aria-labelledby="brief-heading"><div class="brief-label"><span class="brief-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg></span><h2 id="brief-heading">今日速读</h2><span class="brief-rule">DAILY BRIEF</span></div><div id="daily-summary" class="brief-content"><p class="muted">采集完成后，这里将呈现有行情依据的每日市场摘要。</p></div><a href="#news" class="brief-link" aria-label="跳转到新闻聚焦"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></a></section>
+
+      <div class="market-grid" id="sectors">
+        <section class="card heatmap-card" aria-labelledby="heatmap-heading"><div class="card-heading"><div><div class="section-kicker">SECTOR RADAR</div><h2 id="heatmap-heading">板块表现一览</h2></div><span class="subtle-tag">11 大板块 · ETF</span></div><div class="heatmap-caption"><span>板块当日表现 <span id="quote-date-note"></span></span><span class="heatmap-legend"><i class="legend-negative"></i>下跌<i class="legend-positive"></i>上涨</span></div><div id="sector-heatmap" class="sector-heatmap"></div><div class="heatmap-footer"><span><span class="mini-square"></span>点击板块，查看行情与相关报道</span><span>涨跌幅 %</span></div></section>
+
+        <section class="card ranking-card" aria-labelledby="ranking-heading"><div class="card-heading"><div><div class="section-kicker">ON THE MOVE</div><h2 id="ranking-heading">板块热度榜</h2></div><label class="sr-only" for="sector-sort">板块排序</label><select id="sector-sort" class="compact-select"><option value="heat_score">按热度</option><option value="change_pct">按涨跌</option><option value="volume_ratio">按量比</option><option value="news_count">按报道数</option></select></div><div class="ranking-table-wrap"><table class="ranking-table"><thead><tr><th scope="col">板块 / ETF</th><th scope="col">涨跌幅</th><th scope="col">热度</th></tr></thead><tbody id="sector-ranking"></tbody></table></div><div class="ranking-footer"><span>综合量价与新闻 · * 表示计分项不完整</span><a href="#methodology" aria-label="查看热度计算说明">ⓘ</a></div></section>
+      </div>
+
+      <section class="card leaders-card" id="leaders" aria-labelledby="leaders-heading">
+        <div class="card-heading"><div><div class="section-kicker">LEADER PULLBACK WATCH</div><h2 id="leaders-heading">龙头回调观察 <span id="leaders-count" class="heading-count">—</span></h2></div><span id="leaders-status" class="subtle-tag">等待采集</span></div>
+        <div class="leaders-intro"><div><p>从 11 个板块各 10 家固定龙头中，寻找“前期上涨、近期回调、长期趋势仍向上”的研究候选。</p><small id="leaders-asof">使用最近一个完整交易日的复权收盘价</small></div><div class="leaders-controls"><label class="sr-only" for="leaders-sector">筛选股票板块</label><select id="leaders-sector"><option value="all">全部板块</option></select><label class="sr-only" for="leaders-view">筛选股票状态</label><select id="leaders-view"><option value="candidate">只看候选</option><option value="all">查看全部股票</option></select></div></div>
+        <div id="leaders-sector-tabs" class="leaders-sector-tabs" role="group" aria-label="各板块候选数量"></div>
+        <div class="leaders-rules" id="leaders-rules" aria-label="筛选条件"></div>
+        <div id="leaders-empty" class="earnings-empty"></div>
+        <div id="leaders-list" class="leaders-list"></div>
+        <div class="leaders-footer"><p id="leaders-coverage"></p><p id="leaders-note">规则筛选的研究候选，不是买入建议。</p><div id="leaders-errors" class="earnings-errors hidden" role="status"></div></div>
+      </section>
+
+      <section class="card earnings-card" id="earnings" aria-labelledby="earnings-heading">
+        <div class="card-heading"><div><div class="section-kicker">WEEKLY EARNINGS CALENDAR</div><h2 id="earnings-heading">本周财报 <span id="earnings-count" class="heading-count">—</span></h2></div><span id="earnings-status" class="subtle-tag">等待采集</span></div>
+        <div class="earnings-toolbar"><div><p id="earnings-week" class="earnings-week">随日报保存当周财报日历</p><p id="earnings-scope" class="earnings-scope">市值 ≥ 100 亿美元 · 全周按市值选取最多 15 家</p></div></div>
+        <div id="earnings-tabs" class="earnings-tabs" role="tablist" aria-label="按工作日查看财报公司"></div>
+        <p class="earnings-explainer">预期 EPS 是每股盈利预期。分析师目标价空间<span>非财报当天涨跌预测</span>，请结合目标期限阅读。</p>
+        <div id="earnings-panel" role="tabpanel" tabindex="0">
+        <div id="earnings-empty" class="earnings-empty"></div>
+        <div id="earnings-table-wrap" class="earnings-table-wrap hidden"><table class="earnings-table"><thead><tr><th scope="col">公司 / 股票代码</th><th scope="col">市值 · 美元</th><th scope="col">预计财报日期 · 美东</th><th scope="col">预期 EPS</th><th scope="col">分析师目标价 / 隐含空间</th></tr></thead><tbody id="earnings-list"></tbody></table></div>
+        </div>
+        <div class="earnings-footer"><div id="earnings-sources" class="earnings-sources"></div><p id="earnings-asof" class="earnings-asof">尚未收集本周财报</p><p id="earnings-coverage" class="earnings-coverage"></p><p id="earnings-note" class="earnings-note">财报日历为预计日期，请以公司公告为准。</p><div id="earnings-errors" class="earnings-errors hidden" role="status"></div></div>
+      </section>
+
+      <div class="content-grid">
+        <section class="card news-card" id="news" aria-labelledby="news-heading"><div class="card-heading"><div><div class="section-kicker">THE STORIES THAT MATTER</div><h2 id="news-heading">新闻聚焦 <span id="news-total" class="heading-count">0</span></h2></div><span class="day-only-note">最近 24 小时 · 美东</span></div><div class="news-controls">
+          <div class="news-range-row"><label for="news-range">报道范围</label><select id="news-range"><option value="today">今日（美东）</option><option value="24h" selected>最近 24 小时</option><option value="72h">最近 72 小时</option></select><div id="news-coverage-counts" class="news-coverage-counts" aria-label="各时间范围新闻数量"></div></div>
+          <p id="news-coverage-note" class="news-coverage-note">时间范围以本份日报的采集时间为准。</p>
+          <p id="news-translation-note" class="news-translation-status hidden" role="status"></p>
+          <div class="news-tabs" role="group" aria-label="筛选新闻类别"><button type="button" class="selected" data-category="all" aria-pressed="true">全部</button><button type="button" data-category="宏观政策" aria-pressed="false">宏观政策</button><button type="button" data-category="公司动态" aria-pressed="false">公司动态</button><button type="button" data-category="财报业绩" aria-pressed="false">财报业绩</button></div><div class="news-search-row"><div class="search-input"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><label class="sr-only" for="news-search">搜索中英文新闻标题、摘要或来源</label><input type="search" id="news-search" placeholder="搜索中英文标题、关键词或来源" autocomplete="off"></div><label class="sr-only" for="news-sector">筛选新闻板块</label><select id="news-sector"><option value="all">全部板块</option></select></div></div><div id="news-list" class="news-list"></div><div class="news-footer"><span id="news-result-count">暂无报道</span><button type="button" id="show-more-news" class="text-button hidden">显示更多 <span aria-hidden="true">↓</span></button></div></section>
+
+        <div class="right-column"><section class="card alerts-card" id="alerts" aria-labelledby="alerts-heading"><div class="card-heading"><div><div class="section-kicker">UNUSUAL ACTIVITY</div><h2 id="alerts-heading">异动观察</h2></div><span class="alert-orbit" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m13 3-8 10h6l-1 8 9-12h-7l1-6Z"/></svg></span></div><div id="alerts-list" class="alerts-list"></div><div class="alerts-footer">规则筛选的市场信号，供进一步核实</div></section><section class="digest-card" aria-labelledby="digest-heading"><div class="digest-decoration" aria-hidden="true"><span></span><span></span><span></span></div><span class="digest-eyebrow">LESS NOISE. MORE CONTEXT.</span><h2 id="digest-heading">每天一份，<br>有据可循的市场观察。</h2><p id="schedule-detail">定时采集行情与公开新闻，保存为可回看的每日手记。</p><a href="#methodology">了解数据来源 <span aria-hidden="true">↗</span></a></section></div>
+      </div>
+
+      <section class="card methodology-card" id="methodology" aria-labelledby="methodology-heading"><div class="methodology-top"><div><div class="section-kicker">TRANSPARENT BY DESIGN</div><h2 id="methodology-heading">让每一条信息，都有来处</h2></div><span id="source-overall" class="subtle-tag">等待数据</span></div><div id="source-list" class="source-list"><p class="muted">采集后显示各数据源的状态、更新时间与异常信息。</p></div><div id="source-errors" class="source-errors hidden"></div><details class="methodology-details"><summary>数据口径与计算方式 <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></summary><div class="methodology-copy"><p><strong>行情口径：</strong>标普 500、纳斯达克 100、道琼斯及罗素 2000 分别以 SPY、QQQ、DIA、IWM ETF 作为观察代理；板块以对应 SPDR ETF 代表。公开报价可能延迟，并非实时行情。休市日会分别展示新闻日期与最新报价日期。</p><p><strong>龙头回调观察：</strong>固定跟踪 11 个板块各 10 家公司。候选必须同时满足前期涨幅、近期高点、5%–12% 回调及均线趋势四项规则；使用完整交易日复权收盘价。筛选结果只代表值得进一步研究，不是买入建议，也不预测未来回报。</p><p><strong>热度与异动：</strong>热度是规则得分，不代表资金净流入或投资建议。综合绝对涨跌幅、相对 SPY 表现、日成交量比和报道数；成交量比仅在常规完整交易时段结束后使用。具体公式与阈值见项目 README。</p><p><strong>新闻口径：</strong>新闻可按日报当日、最近 24 小时或 72 小时查看，窗口截至所选日报采集时间，仅覆盖采集到的 RSS 报道。每日摘要及热度仍采用纽约自然日新闻。中文译文由机器生成，可展开英文原文核对；翻译失败保留原文并标示。类别、板块和重要性由关键词匹配，不据此推断市场变化的因果。</p></div></details></section>
+      <footer class="page-footer"><span>市场手记 <span class="footer-divider">/</span> 把市场的喧嚣，整理成清晰的日常。</span><span>公开数据 · 可追溯 · 仅供研究参考</span></footer>
+    </main>
+  </div>
+
+  <dialog id="sector-dialog" class="sector-dialog" aria-labelledby="sector-dialog-title"><div class="dialog-header"><div><span class="section-kicker" id="sector-dialog-symbol">SECTOR DETAIL</span><h2 id="sector-dialog-title">板块详情</h2></div><button id="close-dialog" class="icon-button" type="button" aria-label="关闭详情"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><div id="sector-dialog-content"></div></dialog>
+  <dialog id="export-dialog" class="export-dialog" aria-labelledby="export-dialog-title"><div class="dialog-header"><div><span class="section-kicker">TAKE YOUR NOTES WITH YOU</span><h2 id="export-dialog-title">导出市场日报</h2></div><button id="close-export" class="icon-button" type="button" aria-label="关闭导出"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><p class="muted">下载已保存的真实数据日报，保留来源与采集时间。</p><div class="export-options"><a id="export-markdown" class="export-option" download><span class="file-type">MD</span><span><strong>Markdown 日报</strong><small>适合阅读、笔记与分享</small></span><span aria-hidden="true">↓</span></a><a id="export-json" class="export-option" download><span class="file-type">{ }</span><span><strong>JSON 原始数据</strong><small>适合进一步分析与处理</small></span><span aria-hidden="true">↓</span></a></div></dialog>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>

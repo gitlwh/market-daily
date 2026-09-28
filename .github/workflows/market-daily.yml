@@ -1,0 +1,55 @@
+name: Market Daily
+
+on:
+  schedule:
+    # 23:30 UTC = 18:30 EST / 19:30 EDT, safely after the regular close.
+    - cron: "30 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: market-daily
+  cancel-in-progress: false
+
+jobs:
+  collect-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore translation and report cache
+        uses: actions/cache@v4
+        with:
+          path: data/market.db
+          key: market-db-${{ github.run_id }}
+          restore-keys: market-db-
+      - name: Collect and publish data
+        run: python3 batch.py --output web-data
+      - name: Preserve generated daily reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web-data
+          git diff --cached --quiet || git commit -m "data: update market daily"
+          git push
+      - name: Build static site artifact
+        run: |
+          mkdir -p site/data
+          cp -R static/. site/
+          cp -R web-data/. site/data/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
