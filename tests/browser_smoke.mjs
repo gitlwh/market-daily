@@ -111,7 +111,8 @@ try {
   await screenshot('sentiment-desktop');
   const demoScreen = await evaluate(`fetch('/api/demo').then(r => r.json()).then(d => d.snapshot.leader_screen)`);
   assert.equal(demoScreen.universe_size, 110);
-  assert.equal(await evaluate(`document.querySelectorAll('#leaders-sector-tabs button').length`), 11);
+  assert.equal(await evaluate(`document.querySelectorAll('#leaders-sector-tabs button').length`), 12);
+  assert.equal(await evaluate(`document.querySelectorAll('#leaders-strategy-tabs button').length`), 2);
   assert(await evaluate(`document.querySelector('#sectors').compareDocumentPosition(document.querySelector('#leaders')) & Node.DOCUMENT_POSITION_FOLLOWING`), 'Leader screen follows sectors');
   assert(await evaluate(`document.querySelector('#leaders').compareDocumentPosition(document.querySelector('#earnings')) & Node.DOCUMENT_POSITION_FOLLOWING`), 'Leader screen precedes earnings');
   assert.equal(await evaluate(`document.querySelectorAll('.leader-stock').length`), demoScreen.candidate_count);
@@ -225,7 +226,7 @@ try {
   await evaluate(`window.fetch = window.savedFetch; delete window.savedFetch`);
   assert.deepEqual(errors, [], 'No uncaught browser exceptions');
   assert.deepEqual(badResponses, [], 'No failed resource requests');
-  console.log('PASS: 110-stock leader screen, sector/status filters, weekday earnings tabs, keyboard navigation, section order, live data, Chinese originals, 24/72-hour windows, 11 sectors, demo isolation, mobile layout, export, offline handling.');
+  console.log('PASS: combined leader/top-100 screen, sector/status filters, weekday earnings tabs, keyboard navigation, section order, live data, Chinese originals, 24/72-hour windows, 11 sectors, demo isolation, mobile layout, export, offline handling.');
   console.log('Screenshots: test-results/desktop-live.png, desktop-demo.png, mobile-demo.png');
 } finally {
   if (process.argv.includes('--close-browser')) await send('Browser.close').catch(() => {});

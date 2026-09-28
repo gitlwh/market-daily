@@ -83,10 +83,10 @@ def calculate_sentiment(snapshot, leader_result, histories, now=None):
             if len(closes) >= 50 and closes[-1] > sum(closes[-50:]) / 50 and len(closes) >= 21 and closes[-1] > closes[-21]:
                 strong += 1
         components.append(_component("leader_breadth", strong / len(leaders) * 100,
-            "%d / %d 家龙头站上 50 日均线且 20 日动量为正" % (strong, len(leaders)),
+            "%d / %d 家观察池股票站上 50 日均线且 20 日动量为正" % (strong, len(leaders)),
             {"strong": strong, "total": len(leaders)}))
     else:
-        components.append(_component("leader_breadth", detail="龙头股票历史样本不足"))
+        components.append(_component("leader_breadth", detail="观察池股票历史样本不足"))
 
     if len(spy) >= 21:
         momentum = (spy[-1]["close"] / spy[-21]["close"] - 1) * 100

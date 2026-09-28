@@ -206,8 +206,9 @@ class Application:
                         raise ValueError("Invalid leader screen payload")
                 except Exception:
                     LOG.exception("Leader screen failed; preserving market/news data")
-                    screen = {"status": "error", "as_of": started.isoformat(), "universe_size": 110,
+                    screen = {"status": "error", "as_of": started.isoformat(), "universe_size": 0,
                               "available_count": 0, "candidate_count": 0, "stocks": [],
+                              "sector_leader_count": 110, "market_cap_top_100_count": 0,
                               "rules": dict(leader_screen.RULES),
                               "errors": ["龙头回调观察暂时无法读取，请稍后重试"],
                               "source": {"name": "Yahoo Finance · 龙头回调观察", "url": "https://finance.yahoo.com/",
@@ -330,7 +331,7 @@ def markdown_report(snapshot):
     if screen:
         candidates = [item for item in screen.get("stocks", []) if item.get("status") == "candidate"]
         lines += ["", "## 龙头回调观察", "",
-                  "固定股票池：11 个板块各 10 家；符合观察条件 %d 家。规则筛选的研究候选，不是买入建议。" % len(candidates), "",
+                  "合并股票池：11 个板块各 10 家龙头，并加入市值前 100 后去重，共 %d 家；符合观察条件 %d 家。规则筛选的研究候选，不是买入建议。" % (screen.get("universe_size", 0), len(candidates)), "",
                   "| 公司 | 板块 | 行情日期 | 前期上涨 | 距高点回调 | 50 / 200 日均线 |",
                   "| --- | --- | --- | ---: | ---: | ---: |"]
         for item in candidates:

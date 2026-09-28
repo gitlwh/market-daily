@@ -50,6 +50,21 @@ class LeaderScreenUnitTests(unittest.TestCase):
         self.assertGreaterEqual(-result["pullback_pct"], 5)
         self.assertLessEqual(-result["pullback_pct"], 12)
 
+    def test_market_cap_parser_ranks_and_maps_sectors(self):
+        rows = []
+        sectors = list(leader_screen.NASDAQ_SECTORS)
+        for index in range(105):
+            rows.append({"symbol": "T%03d" % index, "name": "Test %d" % index,
+                         "marketCap": str(1_000_000_000_000 - index),
+                         "sector": sectors[index % len(sectors)], "trailingPE": 10 + index / 10})
+        rows.append({"symbol": "BAD", "name": "Bad", "marketCap": "—", "sector": "Technology"})
+        parsed = leader_screen.parse_market_cap_top_100({"data": {"rows": rows}})
+        self.assertEqual(len(parsed), 100)
+        self.assertEqual(parsed[0]["market_cap_rank"], 1)
+        self.assertEqual(parsed[-1]["market_cap_rank"], 100)
+        self.assertIn(parsed[0]["sector"], leader_screen.SECTOR_LEADERS)
+        self.assertEqual(parsed[0]["pe_ratio"], 10)
+
     def test_one_failed_rule_is_not_candidate(self):
         values = [100 + index * .01 for index in range(205)]
         result = leader_screen.screen_stock("TEST", "测试", "XLK", bars(values))
@@ -88,6 +103,12 @@ class LeaderCollectorTests(unittest.TestCase):
     def test_collector_preserves_partial_results(self):
         values = [80 + index * .2 for index in range(220)]
         def fake_fetch(url):
+            if "screener/predefined" in url:
+                rows = [{"symbol": "TOP%03d" % index, "name": "Top %d" % index,
+                         "marketCap": str(1_000_000_000_000 - index), "sector": "Technology",
+                         "trailingPE": 10 + index / 10}
+                        for index in range(100)]
+                return json.dumps({"data": {"rows": rows}}).encode()
             symbol = url.split("/chart/")[1].split("?")[0]
             symbol = symbol.replace("%2D", "-")
             if symbol == "AAPL":
@@ -96,10 +117,28 @@ class LeaderCollectorTests(unittest.TestCase):
         with patch.object(leader_screen, "fetch_bytes", side_effect=fake_fetch):
             result = leader_screen.collect_leader_screen(NOW)
         self.assertEqual(result["status"], "partial")
-        self.assertEqual(result["available_count"], 109)
+        self.assertEqual(result["universe_size"], 210)
+        self.assertEqual(result["market_cap_top_100_count"], 100)
+        self.assertEqual(result["available_count"], 209)
+        self.assertEqual([item["id"] for item in result["strategies"]], ["pullback", "value_momentum"])
+        self.assertGreater(result["strategies"][1]["candidate_count"], 0)
         failed = next(item for item in result["stocks"] if item["symbol"] == "AAPL")
         self.assertEqual(failed["status"], "insufficient")
         self.assertTrue(result["errors"])
+
+    def test_collector_falls_back_to_leaders_when_market_cap_source_fails(self):
+        values = [80 + index * .2 for index in range(220)]
+        def fake_fetch(url):
+            if "screener/predefined" in url:
+                raise ProviderError("offline")
+            symbol = url.split("/chart/")[1].split("?")[0].replace("%2D", "-")
+            return yahoo_payload(values, symbol)
+        with patch.object(leader_screen, "fetch_bytes", side_effect=fake_fetch):
+            result = leader_screen.collect_leader_screen(NOW)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["universe_size"], 110)
+        self.assertEqual(result["market_cap_top_100_count"], 0)
+        self.assertIn("市值前 100", result["errors"][0])
 
 
 class LeaderServerIntegrationTests(unittest.TestCase):

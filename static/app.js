@@ -19,7 +19,7 @@
   const state = {
     mode: 'live', snapshot: null, dates: [], collection: {}, schedule: {},
     selectedDate: '', category: 'all', sector: 'all', keyword: '', newsLimit: 6, newsRange: '24h',
-    sort: 'heat_score', earningsDay: '', leaderSector: 'all', leaderView: 'candidate', requestVersion: 0, busy: false, refreshPending: false,
+    sort: 'heat_score', earningsDay: '', leaderStrategy: 'pullback', leaderSector: 'all', leaderView: 'candidate', requestVersion: 0, busy: false, refreshPending: false,
     pollTimer: null, toastTimer: null, fetchError: '', staticMode: false,
   };
   let chartId = 0;
@@ -39,7 +39,7 @@
   const percent = (value, suffix = '%') => isNumber(value)
     ? `${value > 0 ? '+' : ''}${formatNumber(value)}${suffix}` : '—';
   const direction = (value) => isNumber(value) ? value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral' : 'neutral';
-  const sectorName = (symbol) => SECTORS.find((sector) => sector.symbol === symbol)?.name || symbol;
+  const sectorName = (symbol) => symbol === 'OTHER' ? '市值前 100' : SECTORS.find((sector) => sector.symbol === symbol)?.name || symbol;
 
   function safeURL(value) {
     try {
@@ -176,42 +176,66 @@
   function renderLeaderScreen() {
     const screen = state.snapshot?.leader_screen;
     const stocks = asArray(screen?.stocks);
-    const candidates = stocks.filter((stock) => stock.status === 'candidate');
+    const strategies = asArray(screen?.strategies).length ? screen.strategies : [{ id: 'pullback', name: '龙头回调', candidate_count: screen?.candidate_count || 0 }];
+    if (!strategies.some((strategy) => strategy.id === state.leaderStrategy)) state.leaderStrategy = strategies[0].id;
+    const activeStrategy = strategies.find((strategy) => strategy.id === state.leaderStrategy) || strategies[0];
+    const strategyResult = (stock) => stock.strategy_results?.[state.leaderStrategy] || (state.leaderStrategy === 'pullback'
+      ? { status: stock.status, checks: stock.checks, reason: stock.reason } : { status: 'insufficient', checks: {}, reason: '该日报尚无此策略数据' });
+    const candidates = stocks.filter((stock) => strategyResult(stock).status === 'candidate');
+    $('#leaders-strategy-tabs').innerHTML = strategies.map((strategy) => `<button type="button" data-leader-strategy="${esc(strategy.id)}" class="${state.leaderStrategy === strategy.id ? 'selected' : ''}" aria-pressed="${state.leaderStrategy === strategy.id}"><span>${esc(strategy.name)}</span><strong>${formatNumber(strategy.candidate_count, 0)}</strong></button>`).join('');
     const sectorCounts = Object.fromEntries(SECTORS.map((sector) => [sector.symbol,
       candidates.filter((stock) => stock.sector === sector.symbol).length]));
-    $('#leaders-sector').innerHTML = '<option value="all">全部板块</option>' + SECTORS.map((sector) => `<option value="${sector.symbol}">${esc(sector.name)} · ${sectorCounts[sector.symbol] || 0} 个候选</option>`).join('');
-    if (state.leaderSector !== 'all' && !SECTORS.some((sector) => sector.symbol === state.leaderSector)) state.leaderSector = 'all';
+    const top100Candidates = candidates.filter((stock) => asArray(stock.universe_tags).includes('market_cap_top_100')).length;
+    $('#leaders-sector').innerHTML = `<option value="all">全部股票</option><option value="TOP100">市值前 100 · ${top100Candidates} 个候选</option>` + SECTORS.map((sector) => `<option value="${sector.symbol}">${esc(sector.name)} · ${sectorCounts[sector.symbol] || 0} 个候选</option>`).join('');
+    if (state.leaderSector !== 'all' && state.leaderSector !== 'TOP100' && !SECTORS.some((sector) => sector.symbol === state.leaderSector)) state.leaderSector = 'all';
     $('#leaders-sector').value = state.leaderSector;
     $('#leaders-view').value = state.leaderView;
-    $('#leaders-sector-tabs').innerHTML = SECTORS.map((sector) => `<button type="button" data-leader-sector="${sector.symbol}" class="${state.leaderSector === sector.symbol ? 'selected' : ''}" aria-pressed="${state.leaderSector === sector.symbol}"><span>${esc(sector.name)}</span><strong>${sectorCounts[sector.symbol] || 0}</strong></button>`).join('');
+    $('#leaders-sector-tabs').innerHTML = `<button type="button" data-leader-sector="TOP100" class="${state.leaderSector === 'TOP100' ? 'selected' : ''}" aria-pressed="${state.leaderSector === 'TOP100'}"><span>市值前 100</span><strong>${top100Candidates}</strong></button>` + SECTORS.map((sector) => `<button type="button" data-leader-sector="${sector.symbol}" class="${state.leaderSector === sector.symbol ? 'selected' : ''}" aria-pressed="${state.leaderSector === sector.symbol}"><span>${esc(sector.name)}</span><strong>${sectorCounts[sector.symbol] || 0}</strong></button>`).join('');
     const rules = screen?.rules || {};
-    $('#leaders-rules').innerHTML = [
+    const ruleItems = state.leaderStrategy === 'value_momentum' ? [
+      ['正市盈率', '仅比较盈利为正且取得可核对市盈率的公司'],
+      ['相对低估', `市盈率位于股票池较低 30%${isNumber(activeStrategy?.pe_cutoff) ? `，本期上限 ${formatNumber(activeStrategy.pe_cutoff)} 倍` : ''}`],
+      ['近期上涨', `最近 ${activeStrategy?.momentum_days || 20} 个交易日涨幅 ≥ ${activeStrategy?.momentum_min_pct || 3}%`],
+      ['趋势确认', '股价站上 50 日均线'],
+    ] : [
       ['前期上涨', `高点较 60 个交易日前 ≥ ${isNumber(rules.gain_min_pct) ? rules.gain_min_pct : 20}%`],
       ['高点够近', `20 日高点出现在最近 ${isNumber(rules.high_recency) ? rules.high_recency : 10} 个交易日`],
       ['开始回调', `距高点回落 ${isNumber(rules.pullback_min_pct) ? rules.pullback_min_pct : 5}%–${isNumber(rules.pullback_max_pct) ? rules.pullback_max_pct : 12}%`],
       ['趋势向上', '股价 > 50 日均线 > 200 日均线'],
-    ].map(([label, detail]) => `<div><strong>${label}</strong><span>${detail}</span></div>`).join('');
-    let visible = stocks.filter((stock) => state.leaderSector === 'all' || stock.sector === state.leaderSector);
-    if (state.leaderView === 'candidate') visible = visible.filter((stock) => stock.status === 'candidate');
-    visible.sort((a, b) => (a.status !== 'candidate') - (b.status !== 'candidate') || (b.gain_pct || -Infinity) - (a.gain_pct || -Infinity));
-    const checkLabels = { prior_gain: '前期上涨', recent_high: '高点够近', pullback: '回调幅度', uptrend: '上升趋势' };
+    ];
+    $('#leaders-rules').innerHTML = ruleItems.map(([label, detail]) => `<div><strong>${label}</strong><span>${detail}</span></div>`).join('');
+    let visible = stocks.filter((stock) => state.leaderSector === 'all' || (state.leaderSector === 'TOP100'
+      ? asArray(stock.universe_tags).includes('market_cap_top_100') : stock.sector === state.leaderSector));
+    if (state.leaderView === 'candidate') visible = visible.filter((stock) => strategyResult(stock).status === 'candidate');
+    visible.sort((a, b) => (strategyResult(a).status !== 'candidate') - (strategyResult(b).status !== 'candidate') || (state.leaderStrategy === 'value_momentum' ? (b.return_20d_pct || -Infinity) - (a.return_20d_pct || -Infinity) : (b.gain_pct || -Infinity) - (a.gain_pct || -Infinity)));
+    const checkLabels = state.leaderStrategy === 'value_momentum'
+      ? { positive_pe: '正市盈率', low_pe: '相对低估', recent_momentum: '近期上涨', above_sma50: '站上 50 日线' }
+      : { prior_gain: '前期上涨', recent_high: '高点够近', pullback: '回调幅度', uptrend: '上升趋势' };
     $('#leaders-list').innerHTML = visible.map((stock) => {
       const history = asArray(stock.history).map((item) => item?.close).filter(isNumber);
-      const insufficient = stock.status === 'insufficient';
+      const result = strategyResult(stock);
+      const insufficient = result.status === 'insufficient';
       const quoteURL = `https://finance.yahoo.com/quote/${encodeURIComponent(stock.symbol || '')}/`;
-      const checks = Object.entries(checkLabels).map(([key, label]) => `<span class="leader-check ${stock.checks?.[key] ? 'passed' : 'failed'}"><i aria-hidden="true">${stock.checks?.[key] ? '✓' : '–'}</i>${label}</span>`).join('');
-      return `<article class="leader-stock ${stock.status === 'candidate' ? 'leader-candidate' : ''}" data-leader-symbol="${esc(stock.symbol || '')}"><header><div><a href="${esc(quoteURL)}" target="_blank" rel="noopener noreferrer"><strong>${esc(stock.symbol || '—')}</strong><span>${esc(stock.name || '')}</span></a><small>${esc(sectorName(stock.sector))} · ${esc(stock.sector || '')}</small></div><span class="leader-state ${stock.status}">${stock.status === 'candidate' ? '符合观察条件' : insufficient ? '数据不足' : '暂未满足'}</span></header>${insufficient ? `<div class="leader-insufficient">${esc(stock.reason || '历史行情不足')}</div>` : `<div class="leader-metrics"><div><span>最新复权收盘</span><strong>$${formatNumber(stock.price)}</strong><small>${esc(stock.trading_date || '日期未知')}</small></div><div><span>前期上涨</span><strong class="${direction(stock.gain_pct)}">${percent(stock.gain_pct)}</strong><small>高点相对 60 日前</small></div><div><span>距近期高点</span><strong class="negative">${percent(stock.pullback_pct)}</strong><small>${esc(stock.high_date || '')} 高点</small></div></div><div class="leader-chart">${history.length > 1 ? chart(history, stock.pullback_pct, 'leader-sparkline', `${stock.symbol} 近 ${history.length} 个交易日复权收盘走势`) : ''}</div><div class="leader-checks">${checks}</div>`}</article>`;
+      const checks = Object.entries(checkLabels).map(([key, label]) => `<span class="leader-check ${result.checks?.[key] ? 'passed' : 'failed'}"><i aria-hidden="true">${result.checks?.[key] ? '✓' : '–'}</i>${label}</span>`).join('');
+      const tags = asArray(stock.universe_tags);
+      const origins = `${tags.includes('sector_leader') ? '<span>板块龙头</span>' : ''}${tags.includes('market_cap_top_100') ? `<span>市值第 ${formatNumber(stock.market_cap_rank, 0)} 名</span>` : ''}`;
+      const metrics = state.leaderStrategy === 'value_momentum'
+        ? `<div><span>滚动市盈率</span><strong>${isNumber(stock.pe_ratio) ? `${formatNumber(stock.pe_ratio)}×` : '—'}</strong><small>公开行情字段</small></div><div><span>近 20 日涨幅</span><strong class="${direction(stock.return_20d_pct)}">${percent(stock.return_20d_pct)}</strong><small>复权收盘价</small></div><div><span>相对 50 日线</span><strong class="${direction(isNumber(stock.price) && isNumber(stock.sma50) ? stock.price - stock.sma50 : null)}">${isNumber(stock.price) && isNumber(stock.sma50) ? percent((stock.price / stock.sma50 - 1) * 100) : '—'}</strong><small>${esc(stock.trading_date || '日期未知')}</small></div>`
+        : `<div><span>最新复权收盘</span><strong>$${formatNumber(stock.price)}</strong><small>${esc(stock.trading_date || '日期未知')}</small></div><div><span>前期上涨</span><strong class="${direction(stock.gain_pct)}">${percent(stock.gain_pct)}</strong><small>高点相对 60 日前</small></div><div><span>距近期高点</span><strong class="negative">${percent(stock.pullback_pct)}</strong><small>${esc(stock.high_date || '')} 高点</small></div>`;
+      return `<article class="leader-stock ${result.status === 'candidate' ? 'leader-candidate' : ''}" data-leader-symbol="${esc(stock.symbol || '')}"><header><div><a href="${esc(quoteURL)}" target="_blank" rel="noopener noreferrer"><strong>${esc(stock.symbol || '—')}</strong><span>${esc(stock.name || '')}</span></a><small>${esc(sectorName(stock.sector))} · ${esc(stock.sector || '')}</small><div class="leader-origins">${origins}</div></div><span class="leader-state ${result.status}">${result.status === 'candidate' ? '符合观察条件' : insufficient ? '数据不足' : '暂未满足'}</span></header>${insufficient ? `<div class="leader-insufficient">${esc(result.reason || '策略所需数据不足')}</div>` : `<div class="leader-metrics">${metrics}</div><div class="leader-chart">${history.length > 1 ? chart(history, state.leaderStrategy === 'value_momentum' ? stock.return_20d_pct : stock.pullback_pct, 'leader-sparkline', `${stock.symbol} 近 ${history.length} 个交易日复权收盘走势`) : ''}</div><div class="leader-checks">${checks}</div>`}</article>`;
     }).join('');
-    const scopeCount = state.leaderSector === 'all' ? screen?.universe_size : stocks.filter((stock) => stock.sector === state.leaderSector).length;
+    const scopeCount = state.leaderSector === 'all' ? screen?.universe_size : state.leaderSector === 'TOP100'
+      ? stocks.filter((stock) => asArray(stock.universe_tags).includes('market_cap_top_100')).length
+      : stocks.filter((stock) => stock.sector === state.leaderSector).length;
     $('#leaders-count').textContent = screen ? String(candidates.length) : '—';
-    const statusLabel = { ok: '110 家已更新', partial: '部分行情可用', error: '行情暂不可用' };
+    const statusLabel = { ok: `${screen?.universe_size || 0} 家已更新`, partial: '部分行情可用', error: '行情暂不可用' };
     $('#leaders-status').textContent = state.mode === 'demo' && screen ? '演示筛选' : screen ? statusLabel[screen.status] || '状态待确认' : '尚未收集';
     $('#leaders-status').className = `subtle-tag ${screen?.status !== 'ok' ? 'earnings-status-warning' : ''}`;
     $('#leaders-asof').textContent = screen?.as_of ? `筛选采集于 ${formatTime(screen.as_of, { year: 'numeric', month: '2-digit', day: '2-digit' })} ET · 信号只使用完整交易日` : '使用最近一个完整交易日的复权收盘价';
     $('#leaders-empty').classList.toggle('hidden', !!visible.length);
-    $('#leaders-empty').innerHTML = visible.length ? '' : emptyContent(screen ? '当前筛选下暂无候选' : '尚未收集个股筛选数据', screen ? '可以切换板块，或选择“查看全部股票”检查每项条件。' : '点击「收集最新数据」后，系统会检查固定的 110 家龙头股票。');
+    $('#leaders-empty').innerHTML = visible.length ? '' : emptyContent(screen ? '当前筛选下暂无候选' : '尚未收集个股筛选数据', screen ? '可以切换板块，或选择“查看全部股票”检查每项条件。' : '点击「收集最新数据」后，系统会检查板块龙头与市值前 100 股票。');
     $('#leaders-list').classList.toggle('hidden', !visible.length);
-    $('#leaders-coverage').textContent = screen ? `股票池 ${scopeCount || 0} 家 · 全部数据可用 ${screen.available_count || 0} / ${screen.universe_size || 110} 家 · 当前显示 ${visible.length} 家` : '';
+    $('#leaders-coverage').textContent = screen ? `合并股票池 ${scopeCount || 0} 家 · 板块龙头 ${screen.sector_leader_count || 110} 家 · 市值榜 ${screen.market_cap_top_100_count || 0} / 100 家 · 数据可用 ${screen.available_count || 0} / ${screen.universe_size || 0} 家 · 当前显示 ${visible.length} 家` : '';
     $('#leaders-note').textContent = screen?.note || '规则筛选的研究候选，不是买入建议。历史走势不能保证未来表现。';
     const errors = asArray(screen?.errors);
     $('#leaders-errors').classList.toggle('hidden', !errors.length);
@@ -691,6 +715,12 @@
     $('#sector-sort').addEventListener('change', (event) => { state.sort = event.target.value; renderSectors(); });
     $('#leaders-sector').addEventListener('change', (event) => { state.leaderSector = event.target.value; renderLeaderScreen(); });
     $('#leaders-view').addEventListener('change', (event) => { state.leaderView = event.target.value; renderLeaderScreen(); });
+    $('#leaders-strategy-tabs').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-leader-strategy]');
+      if (!button) return;
+      state.leaderStrategy = button.dataset.leaderStrategy;
+      renderLeaderScreen();
+    });
     $('#leaders-sector-tabs').addEventListener('click', (event) => {
       const button = event.target.closest('[data-leader-sector]');
       if (!button) return;
