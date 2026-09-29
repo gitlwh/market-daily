@@ -1,10 +1,6 @@
 name: Market Daily
 
 on:
-  push:
-    paths:
-      - "static/**"
-      - "web-data/private/**"
   schedule:
     # 23:30 UTC = 18:30 EST / 19:30 EDT, safely after the regular close.
     - cron: "30 23 * * *"

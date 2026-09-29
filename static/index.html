@@ -23,7 +23,6 @@
       <a class="nav-item" href="#sectors" data-nav="sectors"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20V10m8 10V4m8 16v-7M2 20h20"/></svg>板块雷达</a>
       <a class="nav-item" href="#leaders" data-nav="leaders"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 18 9 12l4 3 7-9M16 6h4v4"/><circle cx="7" cy="7" r="3"/></svg>股票观察</a>
       <a class="nav-item" href="#earnings" data-nav="earnings"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-13 4h3m4 0h2m-9 3h3"/></svg>本周财报</a>
-      <a class="nav-item" href="#account-health" data-nav="account-health"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20V8l8-5 8 5v12H4Z"/><path d="M8 13h8m-8 4h5"/></svg>账户体检</a>
       <a class="nav-item" href="#news" data-nav="news"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h5v5H7zm9 0h1m-1 4h1M7 16h10"/></svg>新闻聚焦<span class="nav-count" id="nav-news-count">—</span></a>
       <a class="nav-item" href="#alerts" data-nav="alerts"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z"/></svg>异动观察</a>
     </nav>
@@ -90,12 +89,6 @@
         <div id="earnings-table-wrap" class="earnings-table-wrap hidden"><table class="earnings-table"><thead><tr><th scope="col">公司 / 股票代码</th><th scope="col">市值 · 美元</th><th scope="col">预计财报日期 · 美东</th><th scope="col">预期 EPS</th><th scope="col">分析师目标价 / 隐含空间</th></tr></thead><tbody id="earnings-list"></tbody></table></div>
         </div>
         <div class="earnings-footer"><div id="earnings-sources" class="earnings-sources"></div><p id="earnings-asof" class="earnings-asof">尚未收集本周财报</p><p id="earnings-coverage" class="earnings-coverage"></p><p id="earnings-note" class="earnings-note">财报日历为预计日期，请以公司公告为准。</p><div id="earnings-errors" class="earnings-errors hidden" role="status"></div></div>
-      </section>
-
-      <section class="card account-health-card" id="account-health" aria-labelledby="account-health-heading">
-        <div class="card-heading"><div><div class="section-kicker">PRIVATE WEEKLY PORTFOLIO REVIEW</div><h2 id="account-health-heading">Robinhood 账户体检</h2></div><span id="account-health-status" class="subtle-tag">加密数据</span></div>
-        <div id="account-health-locked" class="account-health-locked"><div><h3>输入独立口令查看账户汇总</h3><p>账户数据以 AES-256-GCM 加密。口令只在当前浏览器内用于解密，不会发送到服务器或保存。</p></div><form id="account-health-form"><label class="sr-only" for="account-health-passphrase">账户体检解锁口令</label><input id="account-health-passphrase" type="password" minlength="12" autocomplete="current-password" placeholder="输入账户体检口令" required><button type="submit">解锁报告</button></form><p id="account-health-error" class="account-health-error hidden" role="alert"></p></div>
-        <div id="account-health-content" class="account-health-content hidden"></div>
       </section>
 
       <div class="content-grid">

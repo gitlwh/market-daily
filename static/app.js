@@ -454,60 +454,6 @@
     $('#source-overall').textContent = state.mode === 'demo' ? '示例数据源' : sources.length ? `${sources.filter((source) => source.status === 'ok').length} / ${sources.length} 来源可用` : '等待数据';
   }
 
-  function bytesFromBase64(value) {
-    const binary = atob(value);
-    return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  }
-
-  async function decryptAccountHealth(envelope, passphrase) {
-    if (envelope?.version !== 1 || envelope.algorithm !== 'AES-256-GCM' || envelope.kdf !== 'PBKDF2-SHA256') throw new Error('加密报告格式不受支持');
-    const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
-    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bytesFromBase64(envelope.salt), iterations: envelope.iterations, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytesFromBase64(envelope.iv), additionalData: new TextEncoder().encode(envelope.aad) }, key, bytesFromBase64(envelope.ciphertext));
-    return JSON.parse(new TextDecoder().decode(plaintext));
-  }
-
-  function accountMoney(value) { return isNumber(value) ? `$${formatNumber(value)}` : '—'; }
-  function accountPct(value) { return isNumber(value) ? `${formatNumber(value, 1)}%` : '—'; }
-
-  function renderAccountHealth(report) {
-    const account = report.account || {}, review = report.trading_review || {}, concentration = report.concentration || {};
-    const pnl = report.pnl || {}, stress = report.stress || {}, exposure = report.exposure || {};
-    const holdings = asArray(report.holdings);
-    const holdingRows = holdings.map((item) => `<tr><td><strong>${esc(item.symbol)}</strong><small>${esc(item.name || '')}</small></td><td>${accountMoney(item.value)}</td><td>${accountPct(item.weight_pct)}</td><td class="${direction(item.unrealized_pnl)}">${accountMoney(item.unrealized_pnl)}</td></tr>`).join('');
-    const sectorRows = Object.entries(exposure.sectors || {}).map(([name, value]) => `<div><span>${esc(name)}</span><strong>${accountMoney(value)}</strong><i style="width:${account.net_equity ? Math.min(100, value / account.net_equity * 100) : 0}%"></i></div>`).join('') || '<p class="muted">板块映射尚待补充。</p>';
-    const duplicates = asArray(exposure.duplicate_exposure).map((item) => `<li><strong>${esc(item.symbol)}</strong> 直接 ${accountMoney(item.direct_value)} · ETF 间接 ${accountMoney(item.indirect_value)}</li>`).join('') || '<li>当前配置未发现个股与 ETF 重复暴露。</li>';
-    const warnings = asArray(report.data_quality?.warnings).map((item) => `<li>${esc(item)}</li>`).join('') || '<li>本周没有关键计算警告。</li>';
-    $('#account-health-content').innerHTML = `<div class="account-health-meta"><span>报告日期 ${esc(report.as_of || '—')}</span><span>${esc(report.week?.start || '—')} 至 ${esc(report.week?.end || '—')}</span><button type="button" id="account-health-lock">立即锁定</button></div><div class="account-health-metrics"><div><span>账户净资产</span><strong>${accountMoney(account.net_equity)}</strong></div><div><span>可提款现金</span><strong>${accountMoney(account.cash_withdrawable)}</strong></div><div><span>融资余额</span><strong>${accountMoney(account.margin_balance)}</strong></div><div><span>总敞口</span><strong>${accountMoney(account.gross_exposure)}</strong></div></div><div class="account-health-grid"><article><h3>本周交易复盘</h3><p>买入 <strong>${accountMoney(review.bought)}</strong> · 卖出 <strong>${accountMoney(review.sold)}</strong> · 净买入 <strong>${accountMoney(review.net_bought)}</strong></p><p>成交 ${formatNumber(review.trade_count || 0, 0)} 笔 · 换手率 ${accountPct(review.turnover_pct)}</p><small>来回交易：${esc(asArray(review.round_trip_symbols).join('、') || '无')}</small></article><article><h3>持仓集中度</h3><p>最大持仓 <strong>${esc(concentration.largest_symbol || '—')}</strong> · ${accountPct(concentration.largest_weight_pct)}</p><p>前五大持仓合计 <strong>${accountPct(concentration.top5_pct)}</strong></p></article><article><h3>收益来源</h3><p>未实现盈亏 <strong class="${direction(pnl.unrealized_total)}">${accountMoney(pnl.unrealized_total)}</strong></p><p>本周已实现盈亏（FIFO 估算） <strong class="${direction(pnl.realized_week?.total)}">${accountMoney(pnl.realized_week?.total)}</strong></p></article><article><h3>情景压力测试</h3><p>${esc(stress.largest_position_down_20?.symbol || '最大持仓')} 下跌 20%：<strong>${accountMoney(stress.largest_position_down_20?.loss)}</strong></p><p>${esc(stress.largest_sector_down_15?.sector || '最大板块')} 下跌 15%：<strong>${accountMoney(stress.largest_sector_down_15?.loss)}</strong></p><small>机械情景，不是价格预测。</small></article></div><div class="account-health-details"><div><h3>板块敞口</h3><div class="account-sector-bars">${sectorRows}</div><h3>重复持仓</h3><ul>${duplicates}</ul></div><div><h3>当前持仓</h3><div class="account-holdings-table"><table><thead><tr><th>股票</th><th>市值</th><th>占比</th><th>未实现盈亏</th></tr></thead><tbody>${holdingRows}</tbody></table></div></div></div><details class="account-health-warnings"><summary>数据质量与口径</summary><ul>${warnings}</ul><p>已实现盈亏采用成交记录 FIFO 估算，不替代 Robinhood 税务记录。</p></details>`;
-    $('#account-health-locked').classList.add('hidden');
-    $('#account-health-content').classList.remove('hidden');
-    $('#account-health-status').textContent = `已解锁 · ${report.as_of || ''}`;
-    $('#account-health-lock').addEventListener('click', lockAccountHealth);
-  }
-
-  function lockAccountHealth() {
-    $('#account-health-content').replaceChildren();
-    $('#account-health-content').classList.add('hidden');
-    $('#account-health-locked').classList.remove('hidden');
-    $('#account-health-passphrase').value = '';
-    $('#account-health-status').textContent = '加密数据';
-  }
-
-  async function unlockAccountHealth(passphrase) {
-    const error = $('#account-health-error');
-    error.classList.add('hidden');
-    $('#account-health-status').textContent = '正在解密…';
-    try {
-      const response = await fetch(new URL('data/private/account-health.enc.json', document.baseURI), { cache: 'no-store' });
-      if (!response.ok) throw new Error(response.status === 404 ? '首份账户体检尚未生成' : `读取失败 HTTP ${response.status}`);
-      renderAccountHealth(await decryptAccountHealth(await response.json(), passphrase));
-    } catch (reason) {
-      $('#account-health-status').textContent = '未解锁';
-      error.textContent = reason.name === 'OperationError' ? '口令不正确，无法解密账户报告。' : reason.message || '无法读取账户报告。';
-      error.classList.remove('hidden');
-    }
-  }
-
   function renderSchedule() {
     const schedule = state.schedule || {};
     const pad = (value) => String(value).padStart(2, '0');
@@ -823,10 +769,6 @@
     $('#close-dialog').addEventListener('click', () => $('#sector-dialog').close());
     $('#export-button').addEventListener('click', openExport);
     $('#close-export').addEventListener('click', () => $('#export-dialog').close());
-    $('#account-health-form').addEventListener('submit', (event) => {
-      event.preventDefault();
-      unlockAccountHealth($('#account-health-passphrase').value);
-    });
     $$('.export-option').forEach((link) => link.addEventListener('click', () => {
       $('#export-dialog').close();
       showToast('已请求下载日报。');
@@ -838,7 +780,7 @@
     }));
     $$('.nav-item').forEach((link) => link.addEventListener('click', () => {
       $$('.nav-item').forEach((item) => item.classList.toggle('active', item === link));
-      $('.breadcrumb strong').textContent = ({ overview: '市场概览', sectors: '板块雷达', leaders: '股票观察', earnings: '本周财报', 'account-health': '账户体检', news: '新闻聚焦', alerts: '异动观察' })[link.dataset.nav] || '市场概览';
+      $('.breadcrumb strong').textContent = ({ overview: '市场概览', sectors: '板块雷达', leaders: '股票观察', earnings: '本周财报', news: '新闻聚焦', alerts: '异动观察' })[link.dataset.nav] || '市场概览';
     }));
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && state.mode === 'live' && !state.busy && !state.refreshPending) loadDashboard({ quiet: true });
