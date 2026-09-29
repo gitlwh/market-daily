@@ -361,12 +361,29 @@ def collect_leader_screen(now=None):
                 sector_returns[sector] = {"return_63d": None, "return_126d": None}
 
     industry_forward_pes = {}
+    sector_forward_pes = {}
+    universe_by_symbol = {item["symbol"]: item for item in universe}
     for symbol, meta in quote_metadata.items():
         industry, forward_pe = industry_map.get(symbol), meta.get("forward_pe")
         if industry and _finite(forward_pe, positive=True):
             industry_forward_pes.setdefault(industry, []).append(forward_pe)
+        stock = universe_by_symbol.get(symbol)
+        if stock and _finite(forward_pe, positive=True):
+            sector_forward_pes.setdefault(stock.get("sector"), []).append(forward_pe)
+    for stock in results:
+        if _finite(stock.get("forward_pe"), positive=True):
+            continue
+        forecasts, history = stock.get("eps_forecasts") or [], stock.get("history") or []
+        next_eps = forecasts[1].get("eps") if len(forecasts) > 1 else None
+        if history and _finite(next_eps, positive=True):
+            proxy = history[-1]["close"] / next_eps
+            stock["forward_pe_proxy"] = proxy
+            if stock.get("industry"):
+                industry_forward_pes.setdefault(stock["industry"], []).append(proxy)
+            sector_forward_pes.setdefault(stock.get("sector"), []).append(proxy)
     strategies = advanced_strategies.evaluate(
-        results, sector_returns, industry_forward_pes, advanced_strategies.load_estimate_archives())
+        results, sector_returns, industry_forward_pes, advanced_strategies.load_estimate_archives(),
+        sector_forward_pes)
     available = sum(item["status"] != "insufficient" for item in results)
     status = "ok" if available == len(universe) else "partial" if available else "error"
     if (universe_error or sector_error) and status == "ok":

@@ -53,7 +53,9 @@ def parse_analyst_forecasts(payload):
         eps = _number(row.get("consensusEPSForecast"))
         if fiscal_end and eps is not None:
             result.append({"fiscal_end": fiscal_end, "eps": eps,
-                           "analyst_count": row.get("noOfEstimates")})
+                           "analyst_count": row.get("noOfEstimates"),
+                           "revisions_up_4w": _number(row.get("up")),
+                           "revisions_down_4w": _number(row.get("down"))})
     return result
 
 
@@ -144,10 +146,14 @@ def _returns(closes, sessions):
 
 
 def _quarter_growth(quarters):
-    if len(quarters) < 6:
+    if len(quarters) < 5:
         return None
     growth = []
-    for index in (-2, -1):
+    # Six quarters support the requested two consecutive YoY comparisons.
+    # Several free feeds expose only five; in that case retain a clearly
+    # labelled latest-quarter proxy so the daily screen can still decide.
+    indices = (-2, -1) if len(quarters) >= 6 else (-1,)
+    for index in indices:
         current, prior = quarters[index], quarters[index - 4]
         if prior["revenue"] <= 0 or current["eps"] <= 0 or prior["eps"] <= 0:
             return None
@@ -157,8 +163,46 @@ def _quarter_growth(quarters):
     return growth
 
 
-def evaluate(stocks, sector_returns, industry_forward_pes, archives=None):
+def _upward_revision_condition(revision, current_eps, old_date):
+    if revision is not None:
+        return _condition("eps_revision_up", "同财年 EPS 预期上调",
+                          "PASS" if revision >= 3 else "FAIL", round(revision, 2),
+                          "较 63 个交易日前 ≥ 3%", old_date,
+                          "Nasdaq 一致预期快照（精确）")
+    if current_eps and current_eps["eps"] > 0:
+        up = current_eps.get("revisions_up_4w")
+        down = current_eps.get("revisions_down_4w")
+        if up is not None and down is not None:
+            passed = up >= 1 and up > down
+            return _condition("eps_revision_up", "EPS 预期上调趋势（代理）",
+                              "PASS" if passed else "FAIL",
+                              {"up": int(up), "down": int(down), "window": "4周", "evidence": "proxy"},
+                              "代理条件：过去 4 周上调人数 ≥ 1 且多于下调人数",
+                              None, "Nasdaq 预测修订人数（代理）")
+    return _condition("eps_revision_up", "同财年 EPS 预期上调", "UNKNOWN", None,
+                      "较 63 个交易日前 ≥ 3%", old_date, "Nasdaq 一致预期快照")
+
+
+def _revision_condition(key, label, revision, current_eps, old_date):
+    if revision is not None:
+        return _condition(key, label, "PASS" if revision >= 0 else "FAIL",
+                          round(revision, 2), "当前 ≥ 63 个交易日前",
+                          old_date, "Nasdaq 一致预期快照（精确）")
+    if current_eps and current_eps["eps"] > 0:
+        up = current_eps.get("revisions_up_4w")
+        down = current_eps.get("revisions_down_4w")
+        if up is not None and down is not None:
+            return _condition(key, label, "PASS" if down == 0 else "FAIL",
+                              {"up": int(up), "down": int(down), "window": "4周", "evidence": "proxy"},
+                              "代理条件：过去 4 周下调人数 = 0",
+                              None, "Nasdaq 预测修订人数（代理）")
+    return _condition(key, label, "UNKNOWN", None, "当前 ≥ 63 个交易日前",
+                      old_date, "Nasdaq 一致预期快照")
+
+
+def evaluate(stocks, sector_returns, industry_forward_pes, archives=None, sector_forward_pes=None):
     archives = archives or []
+    sector_forward_pes = sector_forward_pes or {}
     counts = {item["id"]: 0 for item in STRATEGIES}
     pending = {item["id"]: 0 for item in STRATEGIES}
     for stock in stocks:
@@ -190,24 +234,33 @@ def evaluate(stocks, sector_returns, industry_forward_pes, archives=None):
                        above5, "连续 5 个交易日", date, "Yahoo Finance 复权收盘"),
             _condition("ma50_rising", "MA50 开始上升", "UNKNOWN" if ma50_now is None else "PASS" if ma50_now > ma50_old else "FAIL",
                        None if ma50_now is None else round(ma50_now - ma50_old, 2), "MA50[t] > MA50[t-20]", date, "Yahoo Finance 复权收盘"),
-            _condition("eps_revision", "同财年 EPS 预期未下降", "UNKNOWN" if revision is None else "PASS" if revision >= 0 and current_eps["eps"] > 0 else "FAIL",
-                       None if revision is None else round(revision, 2), "当前 ≥ 63 个交易日前，且均为正", old_date, "Nasdaq 一致预期快照"),
+            _revision_condition("eps_revision", "同财年 EPS 预期未下降", revision, current_eps, old_date),
         ]
 
         # 2. Value turnaround.
         forward_pe = _number(stock.get("forward_pe"), positive=True)
+        pe_source = "Yahoo Finance 未来 P/E"
+        if forward_pe is None:
+            forward_pe = _number(stock.get("forward_pe_proxy"), positive=True)
+            pe_source = "收盘价 ÷ Nasdaq 下一财年 EPS（代理）"
         peers = industry_forward_pes.get(stock.get("industry"), [])
         peer_median = statistics.median(peers) if len(peers) >= 6 else None
+        peer_scope, peer_multiple = "细分行业", .8
+        if peer_median is None:
+            peers = sector_forward_pes.get(stock.get("sector"), [])
+            peer_median = statistics.median(peers) if len(peers) >= 6 else None
+            peer_scope, peer_multiple = "板块代理", .75
         eps_growth = (next_eps["eps"] / current_eps["eps"] - 1) * 100 if current_eps and next_eps and current_eps["eps"] > 0 and next_eps["eps"] > 0 else None
         ret63 = _returns(closes, 63)
         sector63 = (sector_returns.get(stock.get("sector")) or {}).get("return_63d")
         value = [
-            _condition("peer_discount", "未来 P/E 低于同行", "UNKNOWN" if forward_pe is None or peer_median is None else "PASS" if forward_pe <= peer_median * .8 else "FAIL",
-                       {"forward_pe": forward_pe, "peer_median": None if peer_median is None else round(peer_median, 2), "peer_count": len(peers)}, "≤ 同细分行业中位数 × 0.8；至少 5 家其他同行", date, "Yahoo Finance / Nasdaq 行业"),
+            _condition("peer_discount", "未来 P/E 低于同行", "UNKNOWN" if forward_pe is None or peer_median is None else "PASS" if forward_pe <= peer_median * peer_multiple else "FAIL",
+                       {"forward_pe": forward_pe, "peer_median": None if peer_median is None else round(peer_median, 2), "peer_count": len(peers), "scope": peer_scope, "evidence": "exact" if peer_scope == "细分行业" else "proxy"},
+                       "≤ %s中位数 × %.2f；至少 6 个样本" % (peer_scope, peer_multiple), date,
+                       pe_source + (" / Nasdaq 细分行业" if peer_scope == "细分行业" else " / Nasdaq 板块（代理）")),
             _condition("next_fy_growth", "下一财年 EPS 增长", "UNKNOWN" if eps_growth is None else "PASS" if eps_growth > 0 else "FAIL",
                        None if eps_growth is None else round(eps_growth, 2), "下一财年 > 本财年，且均为正", date, "Nasdaq 一致预期"),
-            _condition("eps_revision", "同财年 EPS 预期未下修", "UNKNOWN" if revision is None else "PASS" if revision >= 0 else "FAIL",
-                       None if revision is None else round(revision, 2), "当前 ≥ 63 个交易日前", old_date, "Nasdaq 一致预期快照"),
+            _revision_condition("eps_revision", "同财年 EPS 预期未下修", revision, current_eps, old_date),
             _condition("above_ma200", "站上 MA200", "UNKNOWN" if len(closes) < 200 else "PASS" if closes[-1] > sum(closes[-200:]) / 200 else "FAIL",
                        None if len(closes) < 200 else round((closes[-1] / (sum(closes[-200:]) / 200) - 1) * 100, 2), "> 0%", date, "Yahoo Finance 复权收盘"),
             _condition("sector_relative_63d", "63 日跑赢板块", "UNKNOWN" if ret63 is None or sector63 is None else "PASS" if ret63 > sector63 else "FAIL",
@@ -218,17 +271,19 @@ def evaluate(stocks, sector_returns, industry_forward_pes, archives=None):
         growth = _quarter_growth(stock.get("quarterly_fundamentals") or [])
         revenue_pass = growth is not None and all(item["revenue"] >= 10 for item in growth)
         eps_pass = growth is not None and all(item["eps"] >= 10 for item in growth)
+        growth_proxy = growth is not None and len(growth) == 1
+        growth_window = "最新一季（代理）" if growth_proxy else "连续两季"
+        growth_source = "Yahoo Finance 季度财务（单季代理）" if growth_proxy else "Yahoo Finance 季度财务"
         ret126 = _returns(closes, 126)
         sector126 = (sector_returns.get(stock.get("sector")) or {}).get("return_126d")
         ma200_now = sum(closes[-200:]) / 200 if len(closes) >= 220 else None
         ma200_old = sum(closes[-220:-20]) / 200 if len(closes) >= 220 else None
         growth_conditions = [
-            _condition("revenue_growth", "连续两季营收同比增长", "UNKNOWN" if growth is None else "PASS" if revenue_pass else "FAIL",
-                       None if growth is None else [round(item["revenue"], 2) for item in growth], "两季各 ≥ 10%", growth[-1]["date"] if growth else None, "Yahoo Finance 季度财务"),
-            _condition("eps_growth", "连续两季 EPS 同比增长", "UNKNOWN" if growth is None else "PASS" if eps_pass else "FAIL",
-                       None if growth is None else [round(item["eps"], 2) for item in growth], "两季各 ≥ 10%，当期与去年同期均为正", growth[-1]["date"] if growth else None, "Yahoo Finance 季度财务"),
-            _condition("eps_revision_up", "同财年 EPS 预期上调", "UNKNOWN" if revision is None else "PASS" if revision >= 3 else "FAIL",
-                       None if revision is None else round(revision, 2), "较 63 个交易日前 ≥ 3%", old_date, "Nasdaq 一致预期快照"),
+            _condition("revenue_growth", "%s营收同比增长" % growth_window, "UNKNOWN" if growth is None else "PASS" if revenue_pass else "FAIL",
+                       None if growth is None else {"values": [round(item["revenue"], 2) for item in growth], "evidence": "proxy" if growth_proxy else "exact"}, "%s同比 ≥ 10%%" % growth_window, growth[-1]["date"] if growth else None, growth_source),
+            _condition("eps_growth", "%s EPS 同比增长" % growth_window, "UNKNOWN" if growth is None else "PASS" if eps_pass else "FAIL",
+                       None if growth is None else {"values": [round(item["eps"], 2) for item in growth], "evidence": "proxy" if growth_proxy else "exact"}, "%s同比 ≥ 10%%，当期与去年同期均为正" % growth_window, growth[-1]["date"] if growth else None, growth_source),
+            _upward_revision_condition(revision, current_eps, old_date),
             _condition("ma200_rising", "长期趋势向上", "UNKNOWN" if ma200_now is None else "PASS" if closes[-1] > ma200_now > ma200_old else "FAIL",
                        None if ma200_now is None else {"price_vs_ma200_pct": round((closes[-1] / ma200_now - 1) * 100, 2), "ma200_change": round(ma200_now - ma200_old, 2)}, "价格 > MA200，且 MA200[t] > MA200[t-20]", date, "Yahoo Finance 复权收盘"),
             _condition("sector_relative_126d", "126 日跑赢板块", "UNKNOWN" if ret126 is None or sector126 is None else "PASS" if ret126 > sector126 else "FAIL",

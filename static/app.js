@@ -191,9 +191,9 @@
     $('#leaders-view').value = state.leaderView;
     $('#leaders-sector-tabs').innerHTML = SECTORS.map((sector) => `<button type="button" data-leader-sector="${sector.symbol}" class="${state.leaderSector === sector.symbol ? 'selected' : ''}" aria-pressed="${state.leaderSector === sector.symbol}"><span>${esc(sector.name)}</span><strong>${sectorCounts[sector.symbol] || 0}</strong></button>`).join('');
     const strategyRules = {
-      drawdown_repair: [['回撤充分', '较 252 日最高收盘价回撤至少 20%'], ['价格确认', '连续 5 日站上 MA50'], ['趋势改善', 'MA50 高于 20 个交易日前'], ['预期止跌', '同财年 EPS 预期不低于 63 个交易日前']],
-      value_turnaround: [['同行折价', '未来 P/E ≤ 同细分行业中位数 × 0.8'], ['盈利增长', '下一财年 EPS 高于本财年'], ['预期止跌', '同财年 EPS 预期不低于 63 个交易日前'], ['长期转强', '价格站上 MA200'], ['跑赢板块', '63 日收益高于固定板块 ETF']],
-      growth_strength: [['营收增长', '最近两季同比增长均 ≥ 10%'], ['盈利增长', '最近两季 EPS 同比增长均 ≥ 10% 且为正'], ['预期上调', '同财年 EPS 预期较 63 个交易日前上调 ≥ 3%'], ['长期趋势', '价格 > MA200 且 MA200 上升'], ['跑赢板块', '126 日收益高于固定板块 ETF']],
+      drawdown_repair: [['回撤充分', '较 252 日最高收盘价回撤至少 20%'], ['价格确认', '连续 5 日站上 MA50'], ['趋势改善', 'MA50 高于 20 个交易日前'], ['预期止跌', '优先比较 63 个交易日快照；缺失时采用过去 4 周无分析师下调']],
+      value_turnaround: [['同行折价', '优先用细分行业中位数 × 0.8；样本不足时用板块中位数 × 0.75'], ['盈利增长', '下一财年 EPS 高于本财年'], ['预期止跌', '优先比较 63 个交易日快照；缺失时采用过去 4 周无分析师下调'], ['长期转强', '价格站上 MA200'], ['跑赢板块', '63 日收益高于固定板块 ETF']],
+      growth_strength: [['营收增长', '优先最近两季同比均 ≥ 10%；历史不足时用最新一季同比'], ['盈利增长', '优先最近两季 EPS 同比均 ≥ 10%；历史不足时用最新一季同比'], ['预期上调', '优先使用 63 日上调 ≥ 3%；缺失时用过去 4 周净上调'], ['长期趋势', '价格 > MA200 且 MA200 上升'], ['跑赢板块', '126 日收益高于固定板块 ETF']],
     };
     const ruleItems = strategyRules[state.leaderStrategy] || [];
     $('#leaders-rules').innerHTML = ruleItems.map(([label, detail]) => `<div><strong>${label}</strong><span>${detail}</span></div>`).join('');
