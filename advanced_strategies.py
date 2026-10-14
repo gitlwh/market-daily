@@ -80,11 +80,33 @@ def parse_quarterly_fundamentals(payload):
             if "revenue" in item and "eps" in item]
 
 
+def parse_annual_fundamentals(payload):
+    """Parse reported annual revenue and diluted EPS from the same Yahoo feed."""
+    try:
+        if isinstance(payload, (bytes, str)):
+            payload = json.loads(payload)
+        series = payload["timeseries"]["result"]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ProviderError("年度财务格式不可识别") from exc
+    values = {}
+    for group in series:
+        key = (group.get("meta") or {}).get("type", [None])[0]
+        if key not in ("annualTotalRevenue", "annualDilutedEPS"):
+            continue
+        short = "revenue" if key == "annualTotalRevenue" else "eps"
+        for row in group.get(key) or []:
+            raw = _number((row.get("reportedValue") or {}).get("raw"))
+            if raw is not None and row.get("asOfDate"):
+                values.setdefault(row["asOfDate"], {})[short] = raw
+    return [{"date": date, **item} for date, item in sorted(values.items())
+            if "revenue" in item and "eps" in item]
+
+
 def fetch_stock_fundamentals(stock, now):
     symbol = stock["symbol"]
     encoded = urllib.parse.quote(symbol, safe="")
     errors = []
-    forecasts, quarters = [], []
+    forecasts, quarters, annuals = [], [], []
     try:
         url = "https://api.nasdaq.com/api/analyst/%s/earnings-forecast" % encoded
         forecasts = parse_analyst_forecasts(fetch_bytes(url))
@@ -94,12 +116,14 @@ def fetch_stock_fundamentals(stock, now):
         start = int((now - timedelta(days=1100)).timestamp())
         end = int((now + timedelta(days=2)).timestamp())
         url = ("https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/%s"
-               "?symbol=%s&type=quarterlyTotalRevenue,quarterlyDilutedEPS&period1=%d&period2=%d"
+               "?symbol=%s&type=quarterlyTotalRevenue,quarterlyDilutedEPS,annualTotalRevenue,annualDilutedEPS&period1=%d&period2=%d"
                % (encoded, encoded, start, end))
-        quarters = parse_quarterly_fundamentals(fetch_bytes(url))
+        payload = fetch_bytes(url)
+        quarters = parse_quarterly_fundamentals(payload)
+        annuals = parse_annual_fundamentals(payload)
     except Exception as exc:
         errors.append("季度财务：%s" % (str(exc) if isinstance(exc, ProviderError) else "读取失败"))
-    return symbol, forecasts, quarters, errors
+    return symbol, forecasts, quarters, annuals, errors
 
 
 def enrich_fundamentals(stocks, now):
@@ -109,11 +133,12 @@ def enrich_fundamentals(stocks, now):
         for future in as_completed(pending):
             symbol = pending[future]
             try:
-                _, forecasts, quarters, errors = future.result()
+                _, forecasts, quarters, annuals, errors = future.result()
             except Exception:
-                forecasts, quarters, errors = [], [], ["基本面数据处理失败"]
+                forecasts, quarters, annuals, errors = [], [], [], ["基本面数据处理失败"]
             by_symbol[symbol]["eps_forecasts"] = forecasts
             by_symbol[symbol]["quarterly_fundamentals"] = quarters
+            by_symbol[symbol]["annual_fundamentals"] = annuals
             if errors:
                 by_symbol[symbol]["fundamental_errors"] = errors
 
@@ -161,6 +186,18 @@ def _quarter_growth(quarters):
                        "revenue": (current["revenue"] / prior["revenue"] - 1) * 100,
                        "eps": (current["eps"] / prior["eps"] - 1) * 100})
     return growth
+
+
+def _annual_growth(annuals):
+    """Use the latest completed fiscal-year YoY result as a labelled fallback."""
+    if len(annuals) < 2:
+        return None
+    prior, current = annuals[-2], annuals[-1]
+    if prior["revenue"] <= 0 or current["eps"] <= 0 or prior["eps"] <= 0:
+        return None
+    return [{"date": current["date"],
+             "revenue": (current["revenue"] / prior["revenue"] - 1) * 100,
+             "eps": (current["eps"] / prior["eps"] - 1) * 100}]
 
 
 def _upward_revision_condition(revision, current_eps, old_date):
@@ -269,11 +306,15 @@ def evaluate(stocks, sector_returns, industry_forward_pes, archives=None, sector
 
         # 3. Growth strength.
         growth = _quarter_growth(stock.get("quarterly_fundamentals") or [])
+        annual_proxy = False
+        if growth is None:
+            growth = _annual_growth(stock.get("annual_fundamentals") or [])
+            annual_proxy = growth is not None
         revenue_pass = growth is not None and all(item["revenue"] >= 10 for item in growth)
         eps_pass = growth is not None and all(item["eps"] >= 10 for item in growth)
-        growth_proxy = growth is not None and len(growth) == 1
-        growth_window = "最新一季（代理）" if growth_proxy else "连续两季"
-        growth_source = "Yahoo Finance 季度财务（单季代理）" if growth_proxy else "Yahoo Finance 季度财务"
+        growth_proxy = growth is not None and (len(growth) == 1 or annual_proxy)
+        growth_window = "最近完整财年（代理）" if annual_proxy else "最新一季（代理）" if growth_proxy else "连续两季"
+        growth_source = "Yahoo Finance 年度财务（年度代理）" if annual_proxy else "Yahoo Finance 季度财务（单季代理）" if growth_proxy else "Yahoo Finance 季度财务"
         ret126 = _returns(closes, 126)
         sector126 = (sector_returns.get(stock.get("sector")) or {}).get("return_126d")
         ma200_now = sum(closes[-200:]) / 200 if len(closes) >= 220 else None

@@ -4,6 +4,20 @@ import advanced_strategies
 
 
 class AdvancedStrategyTests(unittest.TestCase):
+    def test_annual_fundamentals_support_growth_fallback(self):
+        payload = {"timeseries": {"result": [
+            {"meta": {"type": ["annualTotalRevenue"]}, "annualTotalRevenue": [
+                {"asOfDate": "2024-12-31", "reportedValue": {"raw": 100}},
+                {"asOfDate": "2025-12-31", "reportedValue": {"raw": 115}}]},
+            {"meta": {"type": ["annualDilutedEPS"]}, "annualDilutedEPS": [
+                {"asOfDate": "2024-12-31", "reportedValue": {"raw": 4}},
+                {"asOfDate": "2025-12-31", "reportedValue": {"raw": 4.8}}]},
+        ]}}
+        annuals = advanced_strategies.parse_annual_fundamentals(payload)
+        growth = advanced_strategies._annual_growth(annuals)
+        self.assertAlmostEqual(growth[0]["revenue"], 15)
+        self.assertAlmostEqual(growth[0]["eps"], 20)
+
     def test_analyst_forecasts_preserve_fiscal_year_labels(self):
         payload = {"data": {"yearlyForecast": {"rows": [
             {"fiscalEnd": "Sep 2027", "consensusEPSForecast": 9.5, "noOfEstimates": 12,
